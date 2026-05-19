@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=69.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stream-control"
+version = "0.1.0"
+description = "Cross-platform streaming control center for OBS, Streamlabs Desktop, and creator workflows."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "PySide6==6.11.1",
+    "qasync==0.28.0",
+    "obsws-python==1.8.0",
+    "PySLOBS==2.1.0",
+    "platformdirs==4.9.6",
+    "pynput==1.8.2",
+    "websocket-client==1.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.0.3",
+]
+
+[project.scripts]
+stream-control = "stream_control.app:main"
+
+[tool.setuptools.packages.find]
+include = ["stream_control*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
