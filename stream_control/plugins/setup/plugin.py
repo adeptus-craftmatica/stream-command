@@ -1,26 +1,33 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from typing import TYPE_CHECKING, Any
+
+from PySide6.QtCore import QEvent, Signal
 from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
 
+from stream_control.core.platform import is_macos
 from stream_control.plugins.base import AppPlugin, PluginPage
 from stream_control.plugins.context import PluginContext
-from stream_control.services.obs_service import ObsService
+from stream_control.services.overlay_server import OverlayServerStatus
 from stream_control.services.setup_diagnostics_service import (
     SetupCheck,
     SetupDiagnosticsService,
     SetupSnapshot,
 )
-from stream_control.services.streamlabs_service import StreamlabsService
-from stream_control.services.twitch_chat_service import TwitchChatService
 from stream_control.ui.widgets.common import PanelCard
+
+if TYPE_CHECKING:
+    from stream_control.services.obs_service import ObsService
+    from stream_control.services.streamlabs_service import StreamlabsService
+    from stream_control.services.twitch_chat_service import TwitchChatService
 
 
 def _set_tone(label: QLabel, tone: str, text: str) -> None:
@@ -37,9 +44,22 @@ def _set_tone(label: QLabel, tone: str, text: str) -> None:
     label.update()
 
 
+def _first_sentence(text: str) -> str:
+    cleaned = " ".join(text.split())
+    if not cleaned:
+        return ""
+    period = cleaned.find(". ")
+    if period == -1:
+        return cleaned
+    return cleaned[: period + 1]
+
+
 class SetupCheckCard(PanelCard):
     def __init__(self, title: str, parent: QWidget | None = None) -> None:
         super().__init__(title, parent)
+        self.layout.setContentsMargins(14, 14, 14, 14)
+        self.layout.setSpacing(6)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         self.status_label = QLabel(self)
         self.status_label.setWordWrap(True)
         self.layout.addWidget(self.status_label)
@@ -69,10 +89,14 @@ class SetupCheckCard(PanelCard):
         }.get(check.status, check.status.title())
         _set_tone(self.status_label, tone, label)
         self.summary_label.setText(check.summary)
-        detail = check.detail
-        if check.action:
-            detail = f"{detail}\nNext: {check.action}"
+        detail = f"Next: {check.action}" if check.action else _first_sentence(check.detail)
         self.detail_label.setText(detail)
+        tooltip = check.detail
+        if check.action:
+            tooltip = f"{tooltip}\nNext: {check.action}"
+        self.setToolTip(tooltip)
+        self.summary_label.setToolTip(tooltip)
+        self.detail_label.setToolTip(tooltip)
 
 
 class SetupPage(QWidget):
@@ -82,10 +106,12 @@ class SetupPage(QWidget):
 
     def __init__(self, config_path: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._check_columns = 0
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(12)
+        layout.setSpacing(10)
+        self.page_layout = layout
 
         title = QLabel("Setup Center", self)
         title.setObjectName("pageTitle")
@@ -135,11 +161,24 @@ class SetupPage(QWidget):
         self.action_status.setObjectName("mutedText")
         self.action_status.setWordWrap(True)
         self.summary_card.layout.addWidget(self.action_status)
+
+        self.next_steps_heading = QLabel("Next Steps", self.summary_card)
+        self.next_steps_heading.setObjectName("sectionTitle")
+        self.summary_card.layout.addWidget(self.next_steps_heading)
+
+        self.next_steps_label = QLabel(
+            "1. Run the readiness check.\n2. Start a safe test session if you want a dry run.",
+            self.summary_card,
+        )
+        self.next_steps_label.setWordWrap(True)
+        self.summary_card.layout.addWidget(self.next_steps_label)
         layout.addWidget(self.summary_card)
 
         grid = QGridLayout()
-        grid.setHorizontalSpacing(12)
-        grid.setVerticalSpacing(12)
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(10)
+        grid.setContentsMargins(0, 0, 0, 0)
+        self.check_grid = grid
         self.check_cards = {
             "output": SetupCheckCard("Live Output Path", self),
             "obs": SetupCheckCard("OBS Studio", self),
@@ -148,24 +187,14 @@ class SetupPage(QWidget):
             "chat": SetupCheckCard("Chat Management", self),
             "overlay": SetupCheckCard("Music Overlay", self),
         }
+        if is_macos():
+            self.check_cards["permissions"] = SetupCheckCard("macOS Permissions", self)
         card_order = ["output", "obs", "streamlabs", "broadcast", "chat", "overlay"]
-        for index, key in enumerate(card_order):
-            row = index // 3
-            column = index % 3
-            grid.addWidget(self.check_cards[key], row, column)
-        grid.setColumnStretch(0, 1)
-        grid.setColumnStretch(1, 1)
-        grid.setColumnStretch(2, 1)
+        if "permissions" in self.check_cards:
+            card_order.insert(3, "permissions")
+        self._check_order = card_order
+        self._relayout_check_cards(force=True)
         layout.addLayout(grid)
-
-        self.next_steps_card = PanelCard("Next Steps", self)
-        self.next_steps_label = QLabel(
-            "- Run the readiness check.\n- Start a safe test session if you want a dry run.",
-            self.next_steps_card,
-        )
-        self.next_steps_label.setWordWrap(True)
-        self.next_steps_card.layout.addWidget(self.next_steps_label)
-        layout.addWidget(self.next_steps_card)
         layout.addStretch(1)
 
     def render_snapshot(self, snapshot: SetupSnapshot) -> None:
@@ -179,10 +208,34 @@ class SetupPage(QWidget):
             if card is not None:
                 card.set_check(check)
 
-        self.next_steps_label.setText("\n".join(f"- {step}" for step in snapshot.next_steps))
+        self.next_steps_label.setText("\n".join(f"{index + 1}. {step}" for index, step in enumerate(snapshot.next_steps)))
+        self._relayout_check_cards(force=True)
 
     def set_action_message(self, ok: bool, message: str) -> None:
         _set_tone(self.action_status, "good" if ok else "warn", message)
+
+    def event(self, event: QEvent) -> bool:
+        if event.type() == QEvent.Type.Resize:
+            self._relayout_check_cards()
+        return super().event(event)
+
+    def _relayout_check_cards(self, force: bool = False) -> None:
+        available_width = max(self.width(), self.sizeHint().width())
+        columns = 4 if available_width >= 1050 else 3 if available_width >= 780 else 2 if available_width >= 520 else 1
+        if not force and columns == self._check_columns:
+            return
+
+        self._check_columns = columns
+        while self.check_grid.count():
+            self.check_grid.takeAt(0)
+
+        for index, key in enumerate(self._check_order):
+            row = index // columns
+            column = index % columns
+            self.check_grid.addWidget(self.check_cards[key], row, column)
+
+        for column in range(4):
+            self.check_grid.setColumnStretch(column, 1 if column < columns else 0)
 
 
 class SetupPlugin(AppPlugin):
@@ -198,12 +251,14 @@ class SetupPlugin(AppPlugin):
         self.obs_service: ObsService | None = None
         self.streamlabs_service: StreamlabsService | None = None
         self.chat_service: TwitchChatService | None = None
+        self.music_plugin: Any | None = None
 
     def activate(self, context: PluginContext) -> None:
         self._context = context
-        self.obs_service = context.require_service("integrations.obs_service")
-        self.streamlabs_service = context.require_service("integrations.streamlabs_service")
+        self.obs_service = context.get_service("integrations.obs_service")
+        self.streamlabs_service = context.get_service("integrations.streamlabs_service")
         self.chat_service = context.get_service("chat.twitch_service")
+        self.music_plugin = context.get_service("music.plugin")
         self._diagnostics = SetupDiagnosticsService(context.qt_parent)
         self._page = SetupPage(str(context.app_paths.config_file), context.qt_parent)
 
@@ -211,8 +266,10 @@ class SetupPlugin(AppPlugin):
         self._page.request_start_safe_test.connect(lambda: context.schedule(self._start_safe_test_session()))
         self._page.request_stop_safe_test.connect(lambda: context.schedule(self._stop_safe_test_session()))
 
-        self.obs_service.connection_changed.connect(lambda *_: context.schedule(self._refresh_snapshot()))
-        self.streamlabs_service.connection_changed.connect(lambda *_: context.schedule(self._refresh_snapshot()))
+        if self.obs_service is not None:
+            self.obs_service.connection_changed.connect(lambda *_: context.schedule(self._refresh_snapshot()))
+        if self.streamlabs_service is not None:
+            self.streamlabs_service.connection_changed.connect(lambda *_: context.schedule(self._refresh_snapshot()))
         if self.chat_service is not None:
             self.chat_service.connection_changed.connect(lambda *_: context.schedule(self._refresh_snapshot()))
 
@@ -232,21 +289,28 @@ class SetupPlugin(AppPlugin):
             self._context is None
             or self._page is None
             or self._diagnostics is None
-            or self.obs_service is None
-            or self.streamlabs_service is None
         ):
             return
 
         snapshot = await self._diagnostics.build_snapshot(
             self._context.app_config,
+            self._context.credential_store,
             self.obs_service,
             self.streamlabs_service,
             self.chat_service,
+            self._overlay_status(),
         )
         self._page.render_snapshot(snapshot)
 
     async def _start_safe_test_session(self) -> None:
-        if self._page is None or self._context is None or self.obs_service is None or self.streamlabs_service is None:
+        if self._page is None or self._context is None:
+            return
+        if self.obs_service is None or self.streamlabs_service is None:
+            self._page.set_action_message(
+                False,
+                "Safe test mode is unavailable because the output integration services did not finish loading.",
+            )
+            await self._refresh_snapshot()
             return
 
         blocking_real_sessions = []
@@ -277,7 +341,13 @@ class SetupPlugin(AppPlugin):
         await self._refresh_snapshot()
 
     async def _stop_safe_test_session(self) -> None:
-        if self._page is None or self.obs_service is None or self.streamlabs_service is None:
+        if self._page is None:
+            return
+        if self.obs_service is None or self.streamlabs_service is None:
+            self._page.set_action_message(
+                False,
+                "Safe test mode is unavailable because the output integration services did not finish loading.",
+            )
             return
 
         stopped_any = False
@@ -296,3 +366,8 @@ class SetupPlugin(AppPlugin):
         else:
             self._page.set_action_message(False, "No safe test session was active.")
         await self._refresh_snapshot()
+
+    def _overlay_status(self) -> OverlayServerStatus | None:
+        if self.music_plugin is None or not hasattr(self.music_plugin, "overlay_status"):
+            return None
+        return self.music_plugin.overlay_status()

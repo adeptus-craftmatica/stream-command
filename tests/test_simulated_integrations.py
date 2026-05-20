@@ -7,6 +7,50 @@ from stream_control.services.obs_service import ObsService
 from stream_control.services.streamlabs_service import StreamlabsService
 
 
+class _ReplayUnavailableObsClient:
+    def get_scene_list(self) -> dict[str, object]:
+        return {
+            "scenes": [{"sceneName": "Live"}],
+            "currentProgramSceneName": "Live",
+        }
+
+    def get_current_program_scene(self) -> dict[str, object]:
+        return {"currentProgramSceneName": "Live"}
+
+    def get_studio_mode_enabled(self) -> dict[str, object]:
+        return {"studioModeEnabled": False}
+
+    def get_scene_transition_list(self) -> dict[str, object]:
+        return {"transitions": [{"transitionName": "Fade"}]}
+
+    def get_current_scene_transition(self) -> dict[str, object]:
+        return {
+            "currentSceneTransitionName": "Fade",
+            "currentSceneTransitionDuration": 300,
+        }
+
+    def get_replay_buffer_status(self) -> dict[str, object]:
+        raise RuntimeError("Replay buffer output is not available.")
+
+    def get_last_replay_buffer_replay(self) -> dict[str, object]:
+        raise RuntimeError("Replay buffer output is not available.")
+
+    def get_scene_collection_list(self) -> dict[str, object]:
+        return {
+            "sceneCollections": ["Default"],
+            "currentSceneCollectionName": "Default",
+        }
+
+    def get_profile_list(self) -> dict[str, object]:
+        return {
+            "profiles": [{"profileName": "Creator"}],
+            "currentProfileName": "Creator",
+        }
+
+    def get_record_status(self) -> dict[str, object]:
+        return {"outputActive": False}
+
+
 def test_obs_service_simulator_provides_scenes() -> None:
     app = QApplication.instance() or QApplication([])
     service = ObsService()
@@ -103,6 +147,24 @@ def test_obs_service_simulator_supports_sources_audio_and_tools(tmp_path: Path) 
     assert marker["ok"] is True
     assert updated_state["current_scene_collection"] == "Podcast"
     assert updated_state["current_profile"] == "Travel"
+    assert app is not None
+
+
+def test_obs_service_real_production_state_tolerates_missing_replay_buffer() -> None:
+    app = QApplication.instance() or QApplication([])
+    service = ObsService()
+    statuses: list[tuple[bool, str]] = []
+    service.connection_changed.connect(lambda connected, message: statuses.append((connected, message)))
+    service._client = _ReplayUnavailableObsClient()  # type: ignore[assignment]
+
+    payload = asyncio.run(service.refresh_production_state())
+
+    assert payload["connected"] is True
+    assert payload["program_scene"] == "Live"
+    assert payload["replay_buffer_active"] is False
+    assert payload["replay_buffer_available"] is False
+    assert "Enable Replay Buffer" in str(payload["replay_buffer_detail"])
+    assert statuses == []
     assert app is not None
 
 

@@ -7,6 +7,7 @@ from typing import Any
 
 from PySide6.QtCore import QObject
 
+from stream_control.core.credentials import CredentialStore
 from stream_control.core.models import AppConfig
 from stream_control.core.paths import AppPaths
 
@@ -26,6 +27,18 @@ class ServiceRegistry:
             raise KeyError(f"Service '{key}' has not been registered.")
         return self._services[key]
 
+    def snapshot(self) -> dict[str, Any]:
+        return dict(self._services)
+
+    def restore(self, snapshot: dict[str, Any]) -> None:
+        self._services = dict(snapshot)
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeStateSnapshot:
+    services: dict[str, Any]
+    plugins: dict[str, Any]
+
 
 @dataclass(slots=True)
 class PluginContext:
@@ -33,6 +46,7 @@ class PluginContext:
     app_paths: AppPaths
     qt_parent: QObject
     save_callback: Callable[[], None]
+    credential_store: CredentialStore = field(default_factory=CredentialStore)
     services: ServiceRegistry = field(default_factory=ServiceRegistry)
     plugins: dict[str, Any] = field(default_factory=dict)
 
@@ -62,6 +76,16 @@ class PluginContext:
         if plugin_id not in self.plugins:
             raise KeyError(f"Plugin '{plugin_id}' has not been registered.")
         return self.plugins[plugin_id]
+
+    def snapshot_runtime_state(self) -> RuntimeStateSnapshot:
+        return RuntimeStateSnapshot(
+            services=self.services.snapshot(),
+            plugins=dict(self.plugins),
+        )
+
+    def restore_runtime_state(self, snapshot: RuntimeStateSnapshot) -> None:
+        self.services.restore(snapshot.services)
+        self.plugins = dict(snapshot.plugins)
 
     def schedule(self, coro: Any) -> asyncio.Task[Any]:
         loop = asyncio.get_event_loop()

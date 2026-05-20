@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QSignalBlocker, Qt
-from PySide6.QtWidgets import QFrame, QLabel, QTableWidget, QVBoxLayout
+from PySide6.QtWidgets import QFrame, QLabel, QLineEdit, QTableWidget, QVBoxLayout
 
 
 class PanelCard(QFrame):
@@ -52,8 +52,11 @@ def set_status_label(label: QLabel, ok: bool, message: str) -> None:
     label.update()
 
 
-def configure_readonly_line(label: QLabel) -> None:
-    label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+def configure_readonly_line(widget: QLabel | QLineEdit) -> None:
+    if isinstance(widget, QLabel):
+        widget.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        return
+    widget.setCursorPosition(0)
 
 
 def restore_table_column_widths(table: QTableWidget, widths: list[int]) -> None:

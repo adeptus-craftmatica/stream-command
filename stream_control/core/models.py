@@ -11,6 +11,18 @@ def _new_id() -> str:
     return uuid4().hex
 
 
+def _dict_or_default(value: Any, default: dict[str, Any] | None = None) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return deepcopy(value)
+    return {} if default is None else deepcopy(default)
+
+
+def _list_or_default(value: Any, default: list[Any] | None = None) -> list[Any]:
+    if isinstance(value, list):
+        return deepcopy(value)
+    return [] if default is None else deepcopy(default)
+
+
 @dataclass(slots=True)
 class TrackRecord:
     id: str = field(default_factory=_new_id)
@@ -124,23 +136,31 @@ class AppConfig:
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "AppConfig":
-        plugins = deepcopy(raw.get("plugins", {}))
+        if not isinstance(raw, dict):
+            return cls()
+
+        plugins_raw = raw.get("plugins", {})
+        plugins = {
+            str(plugin_id): deepcopy(settings)
+            for plugin_id, settings in plugins_raw.items()
+            if isinstance(plugin_id, str) and isinstance(settings, dict)
+        } if isinstance(plugins_raw, dict) else {}
         legacy_integrations = {
-            "obs": deepcopy(raw.get("obs", {})),
-            "streamlabs": deepcopy(raw.get("streamlabs", {})),
+            "obs": _dict_or_default(raw.get("obs")),
+            "streamlabs": _dict_or_default(raw.get("streamlabs")),
         }
         legacy_music = {
-            "overlay": deepcopy(raw.get("overlay", {})),
-            "library_directories": list(raw.get("library_directories", [])),
-            "music_library": deepcopy(raw.get("music_library", [])),
+            "overlay": _dict_or_default(raw.get("overlay")),
+            "library_directories": [str(item) for item in _list_or_default(raw.get("library_directories"))],
+            "music_library": _list_or_default(raw.get("music_library")),
             "music_volume": int(raw.get("music_volume", 75)),
         }
         legacy_soundboard = {
-            "pads": deepcopy(raw.get("soundboard_pads", [])),
+            "pads": _list_or_default(raw.get("soundboard_pads")),
             "volume": int(raw.get("soundboard_volume", 85)),
         }
         legacy_hotkeys = {
-            "bindings": deepcopy(raw.get("hotkeys", [])),
+            "bindings": _list_or_default(raw.get("hotkeys")),
         }
 
         if "integrations" not in plugins and (

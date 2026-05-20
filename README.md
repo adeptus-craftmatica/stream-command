@@ -24,10 +24,26 @@ Each feature lives inside its own plugin package under `stream_control/plugins`:
 
 ## Quick start
 
+### Windows
+
 ```powershell
 .\.venv\Scripts\pip.exe install -e .[dev]
 .\.venv\Scripts\python.exe main.py
 ```
+
+### macOS and Linux
+
+```bash
+python3 -m venv .venv
+./.venv/bin/pip install -e '.[dev]'
+./.venv/bin/python main.py
+```
+
+## macOS notes
+
+- Global hotkeys need macOS privacy approval before they can listen outside the app.
+- If Hotkeys shows a permission warning, allow your `python` interpreter or packaged app under `System Settings -> Privacy & Security -> Accessibility`.
+- Some macOS versions also require the same app under `Input Monitoring` before background shortcuts will fire reliably.
 
 ## Connection notes
 

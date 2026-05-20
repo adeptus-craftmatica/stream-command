@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import threading
 from collections.abc import Callable
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
@@ -120,6 +121,14 @@ OVERLAY_HTML = """<!doctype html>
 """
 
 
+@dataclass(frozen=True, slots=True)
+class OverlayServerStatus:
+    enabled: bool
+    running: bool
+    url: str
+    last_error: str = ""
+
+
 class OverlayServer:
     def __init__(
         self,
@@ -131,14 +140,28 @@ class OverlayServer:
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self.last_error = ""
+        self._running = False
 
     @property
     def url(self) -> str:
         return self._settings.now_playing_url
 
-    def start(self) -> None:
+    @property
+    def is_running(self) -> bool:
+        return self._running and self._server is not None
+
+    def status(self) -> OverlayServerStatus:
+        return OverlayServerStatus(
+            enabled=self._settings.enabled,
+            running=self.is_running,
+            url=self.url,
+            last_error=self.last_error,
+        )
+
+    def start(self) -> bool:
         if not self._settings.enabled or self._server is not None:
-            return
+            self._running = self._server is not None
+            return self.is_running
 
         state_provider = self._state_provider
 
@@ -175,16 +198,21 @@ class OverlayServer:
             self.last_error = str(exc)
             self._server = None
             self._thread = None
-            return
+            self._running = False
+            return False
 
         self.last_error = ""
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._thread.start()
+        self._running = True
+        return True
 
     def stop(self) -> None:
         if self._server is None:
+            self._running = False
             return
         self._server.shutdown()
         self._server.server_close()
         self._server = None
         self._thread = None
+        self._running = False

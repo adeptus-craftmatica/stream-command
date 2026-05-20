@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from stream_control.core.credentials import OBS_PASSWORD, STREAMLABS_TOKEN
 from stream_control.core.models import ObsSettings, StreamlabsSettings
 from stream_control.plugins.base import AppPlugin, PluginPage
 from stream_control.plugins.context import PluginContext
@@ -38,10 +39,21 @@ class IntegrationsPluginConfig:
     streamlabs: StreamlabsSettings = field(default_factory=StreamlabsSettings)
     simulator: IntegrationSimulatorSettings = field(default_factory=IntegrationSimulatorSettings)
 
-    def to_dict(self) -> dict[str, object]:
+    def to_dict(
+        self,
+        *,
+        include_obs_password: bool = False,
+        include_streamlabs_token: bool = False,
+    ) -> dict[str, object]:
+        obs = asdict(self.obs)
+        streamlabs = asdict(self.streamlabs)
+        if not include_obs_password:
+            obs.pop("password", None)
+        if not include_streamlabs_token:
+            streamlabs.pop("token", None)
         return {
-            "obs": asdict(self.obs),
-            "streamlabs": asdict(self.streamlabs),
+            "obs": obs,
+            "streamlabs": streamlabs,
             "simulator": asdict(self.simulator),
         }
 
@@ -344,10 +356,13 @@ class IntegrationsPlugin(AppPlugin):
         self._page: IntegrationsPage | None = None
         self.obs_service: ObsService | None = None
         self.streamlabs_service: StreamlabsService | None = None
+        self._persist_obs_password_in_config = False
+        self._persist_streamlabs_token_in_config = False
 
     def activate(self, context: PluginContext) -> None:
         self._context = context
         self._settings = IntegrationsPluginConfig.from_dict(context.plugin_settings(self.plugin_id))
+        self._hydrate_credentials()
 
         self.obs_service = ObsService(context.qt_parent)
         self.streamlabs_service = StreamlabsService(context.qt_parent)
@@ -369,6 +384,7 @@ class IntegrationsPlugin(AppPlugin):
         context.register_service("integrations.obs_service", self.obs_service)
         context.register_service("integrations.streamlabs_service", self.streamlabs_service)
         context.register_service("integrations.plugin", self)
+        self._persist_runtime_settings()
 
     def page(self) -> PluginPage | None:
         if self._page is None:
@@ -425,4 +441,42 @@ class IntegrationsPlugin(AppPlugin):
     def _save_settings(self) -> None:
         if self._context is None:
             return
-        self._context.save_plugin_settings(self.plugin_id, self._settings.to_dict())
+        self._persist_obs_password_in_config = (
+            bool(self._settings.obs.password)
+            and not self._context.credential_store.store_secret(OBS_PASSWORD, self._settings.obs.password)
+        )
+        self._persist_streamlabs_token_in_config = (
+            bool(self._settings.streamlabs.token)
+            and not self._context.credential_store.store_secret(STREAMLABS_TOKEN, self._settings.streamlabs.token)
+        )
+        self._context.save_plugin_settings(
+            self.plugin_id,
+            self._settings.to_dict(
+                include_obs_password=self._persist_obs_password_in_config,
+                include_streamlabs_token=self._persist_streamlabs_token_in_config,
+            ),
+        )
+
+    def _hydrate_credentials(self) -> None:
+        if self._context is None:
+            return
+        obs_secret = self._context.credential_store.load_or_migrate(OBS_PASSWORD, self._settings.obs.password)
+        streamlabs_secret = self._context.credential_store.load_or_migrate(
+            STREAMLABS_TOKEN,
+            self._settings.streamlabs.token,
+        )
+        self._settings.obs.password = obs_secret.value
+        self._settings.streamlabs.token = streamlabs_secret.value
+        self._persist_obs_password_in_config = obs_secret.should_persist_in_config
+        self._persist_streamlabs_token_in_config = streamlabs_secret.should_persist_in_config
+
+    def _persist_runtime_settings(self) -> None:
+        if self._context is None:
+            return
+        self._context.app_config.set_plugin_settings(
+            self.plugin_id,
+            self._settings.to_dict(
+                include_obs_password=self._persist_obs_password_in_config,
+                include_streamlabs_token=self._persist_streamlabs_token_in_config,
+            ),
+        )

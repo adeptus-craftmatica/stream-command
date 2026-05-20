@@ -1,26 +1,32 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QByteArray, Qt
+from PySide6.QtGui import QCloseEvent, QGuiApplication
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
     QScrollArea,
     QSizePolicy,
+    QSplitter,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
+from qasync import asyncClose
 
 from stream_control.core.config import ConfigStore
+from stream_control.core.credentials import CredentialStore
 from stream_control.core.models import AppConfig
 from stream_control.core.paths import AppPaths
 from stream_control.plugins.builtin import build_builtin_plugins
 from stream_control.plugins.context import PluginContext
 from stream_control.plugins.host import PluginHost
+from stream_control.ui.widgets.common import configure_readonly_line
 
 
 class MainWindow(QMainWindow):
@@ -29,9 +35,11 @@ class MainWindow(QMainWindow):
         self._config_store = config_store
         self._app_paths = app_paths
         self.config: AppConfig = config_store.load()
+        self._did_shutdown = False
 
         self.setWindowTitle("Stream Control")
-        self.resize(1460, 920)
+        self.setMinimumSize(1120, 760)
+        self.resize(1360, 860)
         self._build_shell()
 
         self.plugin_context = PluginContext(
@@ -39,10 +47,12 @@ class MainWindow(QMainWindow):
             app_paths=app_paths,
             qt_parent=self,
             save_callback=self._save_config,
+            credential_store=CredentialStore(),
         )
         self.plugin_host = PluginHost(self.plugin_context, build_builtin_plugins())
         self.plugin_host.activate_plugins()
         self._populate_navigation()
+        self._restore_window_state()
         self._save_config()
 
     def _build_shell(self) -> None:
@@ -54,11 +64,18 @@ class MainWindow(QMainWindow):
         shell.setContentsMargins(0, 0, 0, 0)
         shell.setSpacing(0)
 
+        splitter = QSplitter(Qt.Orientation.Horizontal, central)
+        splitter.setChildrenCollapsible(False)
+        splitter.setHandleWidth(1)
+        self.splitter = splitter
+        shell.addWidget(splitter, 1)
+
         sidebar = QFrame(central)
         sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(250)
+        sidebar.setMinimumWidth(228)
+        sidebar.setMaximumWidth(320)
         sidebar_layout = QVBoxLayout(sidebar)
-        sidebar_layout.setContentsMargins(24, 24, 24, 24)
+        sidebar_layout.setContentsMargins(20, 20, 20, 20)
         sidebar_layout.setSpacing(18)
 
         brand_card = QFrame(sidebar)
@@ -67,7 +84,7 @@ class MainWindow(QMainWindow):
         brand_layout.setContentsMargins(18, 18, 18, 18)
         brand_layout.setSpacing(8)
 
-        brand_pill = QLabel("PLUGIN-FIRST CONTROL", brand_card)
+        brand_pill = QLabel("Plugin-first control", brand_card)
         brand_pill.setObjectName("brandPill")
         brand = QLabel("Stream Control", brand_card)
         brand.setObjectName("brandTitle")
@@ -86,23 +103,32 @@ class MainWindow(QMainWindow):
         self.nav.currentRowChanged.connect(self._change_page)
         sidebar_layout.addWidget(self.nav, 1)
 
-        config_hint = QLabel(f"Config: {self._app_paths.config_file}", sidebar)
-        config_hint.setObjectName("sidebarMeta")
-        config_hint.setWordWrap(True)
-        sidebar_layout.addWidget(config_hint)
+        config_label = QLabel("Config file", sidebar)
+        config_label.setObjectName("sidebarMeta")
+        sidebar_layout.addWidget(config_label)
+
+        config_path = QLineEdit(str(self._app_paths.config_file), sidebar)
+        config_path.setObjectName("sidebarPath")
+        config_path.setReadOnly(True)
+        config_path.setToolTip(str(self._app_paths.config_file))
+        configure_readonly_line(config_path)
+        sidebar_layout.addWidget(config_path)
 
         content = QWidget(central)
         content.setObjectName("contentArea")
         content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(24, 24, 24, 24)
+        content_layout.setContentsMargins(20, 20, 20, 20)
         content_layout.setSpacing(0)
 
         self.stack = QStackedWidget(content)
         self.stack.setObjectName("contentStack")
         content_layout.addWidget(self.stack)
 
-        shell.addWidget(sidebar)
-        shell.addWidget(content, 1)
+        splitter.addWidget(sidebar)
+        splitter.addWidget(content)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([250, 1110])
 
     def _populate_navigation(self) -> None:
         for page in self.plugin_host.navigation_pages():
@@ -121,7 +147,23 @@ class MainWindow(QMainWindow):
         self._config_store.save(self.config)
 
     def shutdown(self) -> None:
+        if self._did_shutdown:
+            return
+        self._did_shutdown = True
         self.plugin_host.shutdown()
+
+    async def shutdown_async(self) -> None:
+        if self._did_shutdown:
+            return
+        self._did_shutdown = True
+        await self.plugin_host.shutdown_async()
+
+    @asyncClose
+    async def closeEvent(self, event: QCloseEvent) -> None:
+        self._store_window_state()
+        self._save_config()
+        await self.shutdown_async()
+        super().closeEvent(event)
 
     def _wrap_page(self, widget: QWidget) -> QScrollArea:
         widget.setObjectName(f"{widget.objectName() or 'pluginPage'}")
@@ -142,3 +184,25 @@ class MainWindow(QMainWindow):
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         scroll.setWidget(container)
         return scroll
+
+    def _restore_window_state(self) -> None:
+        ui_settings = self.config.plugin_settings("ui")
+        geometry = str(ui_settings.get("geometry", "")).strip()
+        if geometry:
+            restored = self.restoreGeometry(QByteArray.fromBase64(geometry.encode("ascii")))
+            if restored:
+                return
+        self._center_on_primary_screen()
+
+    def _store_window_state(self) -> None:
+        ui_settings = self.config.plugin_settings("ui")
+        ui_settings["geometry"] = bytes(self.saveGeometry().toBase64()).decode("ascii")
+        self.config.set_plugin_settings("ui", ui_settings)
+
+    def _center_on_primary_screen(self) -> None:
+        screen = QGuiApplication.primaryScreen()
+        if screen is None:
+            return
+        frame = self.frameGeometry()
+        frame.moveCenter(screen.availableGeometry().center())
+        self.move(frame.topLeft())

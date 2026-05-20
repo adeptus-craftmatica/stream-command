@@ -1,46 +1,82 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="77279ae4-6274-45b3-98b8-1982ad9f2ba0" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/.idea/StreamControl.iml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+    <list default="true" id="c15f1be3-dc97-4510-8178-6a294f5f3fc5" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/modules.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/pyproject.toml" beforeDir="false" afterPath="$PROJECT_DIR$/pyproject.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stream_control/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/app.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stream_control/core/config.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/core/config.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stream_control/core/models.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/core/models.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stream_control/plugins/base.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/plugins/base.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stream_control/plugins/broadcast/plugin.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/plugins/broadcast/plugin.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stream_control/plugins/builtin.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/plugins/builtin.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stream_control/plugins/chat/plugin.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/plugins/chat/plugin.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stream_control/plugins/context.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/plugins/context.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stream_control/plugins/dashboard/plugin.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/plugins/dashboard/plugin.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stream_control/plugins/host.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/plugins/host.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stream_control/plugins/integrations/plugin.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/plugins/integrations/plugin.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stream_control/plugins/music/plugin.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/plugins/music/plugin.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stream_control/plugins/obs_production/plugin.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/plugins/obs_production/plugin.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stream_control/plugins/setup/plugin.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/plugins/setup/plugin.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stream_control/services/hotkey_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/services/hotkey_service.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stream_control/services/obs_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/services/obs_service.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stream_control/services/overlay_server.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/services/overlay_server.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stream_control/services/setup_diagnostics_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/services/setup_diagnostics_service.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stream_control/ui/main_window.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/ui/main_window.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stream_control/ui/theme.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/ui/theme.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stream_control/ui/widgets/common.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/ui/widgets/common.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/test_broadcast_plugin.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_broadcast_plugin.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/test_hotkey_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_hotkey_service.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/test_plugin_host.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_plugin_host.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/test_setup_diagnostics_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_setup_diagnostics_service.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/test_simulated_integrations.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_simulated_integrations.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
-  <component name="CopilotPersistence">
-    <persistenceIdMap>
-      <entry key="_C:/Users/JonathanStrachan/PycharmProjects/StreamControl" value="3DwdM6sFV9NUuShUwmvC4LGezVe" />
-    </persistenceIdMap>
-  </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
-  <component name="ProjectColorInfo"><![CDATA[{
-  "associatedIndex": 3
-}]]></component>
-  <component name="ProjectId" id="3DwdM6sFV9NUuShUwmvC4LGezVe" />
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;adeptus-craftmatica&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/adeptus-craftmatica/stream-command.git&quot;,
+    &quot;accountId&quot;: &quot;4c9cead6-7cf7-4d2b-8475-f728b1ef37f9&quot;
+  }
+}</component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 6,
+  &quot;fromUser&quot;: false
+}</component>
+  <component name="ProjectId" id="3DxZ7HHvGMrmME9egAkTpXg7JCU" />
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "Python.main.executor": "Run",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "git-widget-placeholder": "master"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;Python.main.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable&quot;
   }
-}]]></component>
+}</component>
   <component name="RunManager">
     <configuration name="main" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
-      <module name="StreamControl" />
+      <module name="stream-command" />
       <option name="ENV_FILES" value="" />
       <option name="INTERPRETER_OPTIONS" value="" />
       <option name="PARENT_ENVS" value="true" />
@@ -48,8 +84,9 @@
         <env name="PYTHONUNBUFFERED" value="1" />
       </envs>
       <option name="SDK_HOME" value="" />
+      <option name="SDK_NAME" value="Python 3.13 (stream-command)" />
       <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
-      <option name="IS_MODULE_SDK" value="true" />
+      <option name="IS_MODULE_SDK" value="false" />
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <option name="RUN_TOOL" value="" />
@@ -71,26 +108,18 @@
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
-        <option value="bundled-python-sdk-4762d8aabb82-6d6dccd035ac-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-253.30387.173" />
+        <option value="bundled-python-sdk-1aa8deef9a7b-6d6dccd035ac-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-253.32098.104" />
       </set>
     </attachedChunks>
   </component>
   <component name="TaskManager">
     <task active="true" id="Default" summary="Default task">
-      <changelist id="77279ae4-6274-45b3-98b8-1982ad9f2ba0" name="Changes" comment="" />
-      <created>1779197014652</created>
+      <changelist id="c15f1be3-dc97-4510-8178-6a294f5f3fc5" name="Changes" comment="" />
+      <created>1779225511357</created>
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
-      <updated>1779197014652</updated>
+      <updated>1779225511357</updated>
     </task>
     <servers />
-  </component>
-  <component name="github-copilot-workspace">
-    <instructionFileLocations>
-      <option value=".github/instructions" />
-    </instructionFileLocations>
-    <promptFileLocations>
-      <option value=".github/prompts" />
-    </promptFileLocations>
   </component>
 </project>

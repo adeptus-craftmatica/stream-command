@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
@@ -12,15 +14,17 @@ from PySide6.QtWidgets import (
 
 from stream_control.plugins.base import AppPlugin, PluginPage
 from stream_control.plugins.context import PluginContext
-from stream_control.services.hotkey_service import HotkeyService
-from stream_control.services.music_service import MusicService
-from stream_control.services.obs_service import ObsService
-from stream_control.services.streamlabs_service import StreamlabsService
 from stream_control.ui.widgets.common import MetricCard, PanelCard
+
+if TYPE_CHECKING:
+    from stream_control.services.hotkey_service import HotkeyService
+    from stream_control.services.music_service import MusicService
+    from stream_control.services.obs_service import ObsService
+    from stream_control.services.streamlabs_service import StreamlabsService
 
 
 class DashboardPage(QWidget):
-    def __init__(self, overlay_url: str, music_service: MusicService, parent: QWidget | None = None) -> None:
+    def __init__(self, overlay_url: str, music_service: MusicService | None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._music_service = music_service
 
@@ -64,9 +68,13 @@ class DashboardPage(QWidget):
         actions = QHBoxLayout()
         play_pause = QPushButton("Play or Pause Music", actions_card)
         play_pause.setObjectName("primaryButton")
-        play_pause.clicked.connect(self._music_service.toggle_play_pause)
+        play_pause.setEnabled(self._music_service is not None)
+        if self._music_service is not None:
+            play_pause.clicked.connect(self._music_service.toggle_play_pause)
         next_track = QPushButton("Next Track", actions_card)
-        next_track.clicked.connect(self._music_service.play_next)
+        next_track.setEnabled(self._music_service is not None)
+        if self._music_service is not None:
+            next_track.clicked.connect(self._music_service.play_next)
         actions.addWidget(play_pause)
         actions.addWidget(next_track)
         actions.addStretch(1)
@@ -115,23 +123,46 @@ class DashboardPlugin(AppPlugin):
         self._page: DashboardPage | None = None
 
     def activate(self, context: PluginContext) -> None:
-        music_plugin = context.require_plugin("music")
-        music_service: MusicService = context.require_service("music.service")
-        obs_service: ObsService = context.require_service("integrations.obs_service")
-        streamlabs_service: StreamlabsService = context.require_service("integrations.streamlabs_service")
-        hotkey_service: HotkeyService = context.require_service("hotkeys.service")
+        music_plugin = context.get_plugin("music")
+        music_service: MusicService | None = context.get_service("music.service")
+        obs_service: ObsService | None = context.get_service("integrations.obs_service")
+        streamlabs_service: StreamlabsService | None = context.get_service("integrations.streamlabs_service")
+        hotkey_service: HotkeyService | None = context.get_service("hotkeys.service")
 
-        self._page = DashboardPage(music_plugin.overlay_url, music_service, context.qt_parent)
-        self._page.set_obs_status(False, "OBS is offline.")
-        self._page.set_streamlabs_status(False, "Streamlabs Desktop is offline.")
-        self._page.set_library_count(len(music_service.library()))
-        self._page.set_hotkey_status("Waiting for global hotkeys.")
+        overlay_url = getattr(music_plugin, "overlay_url", "Unavailable while the Music plugin is offline.")
+        self._page = DashboardPage(overlay_url, music_service, context.qt_parent)
 
-        music_service.library_changed.connect(lambda tracks: self._page.set_library_count(len(tracks)))
-        music_service.playback_changed.connect(self._sync_now_playing)
-        obs_service.connection_changed.connect(self._page.set_obs_status)
-        streamlabs_service.connection_changed.connect(self._page.set_streamlabs_status)
-        hotkey_service.status_changed.connect(self._page.set_hotkey_status)
+        if obs_service is None:
+            self._page.obs_metric.set_value("Unavailable")
+            self._page.obs_metric.set_detail("The OBS integration did not finish loading in this environment.")
+        else:
+            self._page.set_obs_status(False, "OBS is offline.")
+            obs_service.connection_changed.connect(self._page.set_obs_status)
+
+        if streamlabs_service is None:
+            self._page.streamlabs_metric.set_value("Unavailable")
+            self._page.streamlabs_metric.set_detail(
+                "The Streamlabs Desktop integration did not finish loading in this environment."
+            )
+        else:
+            self._page.set_streamlabs_status(False, "Streamlabs Desktop is offline.")
+            streamlabs_service.connection_changed.connect(self._page.set_streamlabs_status)
+
+        if music_service is None:
+            self._page.library_metric.set_value("Unavailable")
+            self._page.library_metric.set_detail("The Music plugin is offline, so library and playback data are unavailable.")
+            self._page.now_playing.setText("Now playing: Music plugin unavailable")
+        else:
+            self._page.set_library_count(len(music_service.library()))
+            music_service.library_changed.connect(lambda tracks: self._page.set_library_count(len(tracks)))
+            music_service.playback_changed.connect(self._sync_now_playing)
+
+        if hotkey_service is None:
+            self._page.hotkey_metric.set_value("Unavailable")
+            self._page.hotkey_metric.set_detail("The Hotkeys plugin did not finish loading in this environment.")
+        else:
+            self._page.set_hotkey_status("Waiting for global hotkeys.")
+            hotkey_service.status_changed.connect(self._page.set_hotkey_status)
 
     def page(self) -> PluginPage | None:
         if self._page is None:

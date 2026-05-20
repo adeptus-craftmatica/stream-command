@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from stream_control.core.credentials import CHAT_TWITCH_ACCESS_TOKEN
 from stream_control.plugins.base import AppPlugin, PluginPage
 from stream_control.plugins.context import PluginContext
 from stream_control.services.twitch_chat_service import (
@@ -83,9 +84,12 @@ class ChatPluginConfig:
     commands_column_widths: list[int] = field(default_factory=list)
     quick_replies_column_widths: list[int] = field(default_factory=list)
 
-    def to_dict(self) -> dict[str, object]:
+    def to_dict(self, *, include_access_token: bool = False) -> dict[str, object]:
+        twitch = asdict(self.twitch)
+        if not include_access_token:
+            twitch.pop("access_token", None)
         return {
-            "twitch": asdict(self.twitch),
+            "twitch": twitch,
             "feed_filter": self.feed_filter,
             "activity_filter": self.activity_filter,
             "show_notices": self.show_notices,
@@ -165,7 +169,7 @@ class ChatPage(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(16)
+        layout.setSpacing(10)
 
         title = QLabel("Chat Command Center", self)
         title.setObjectName("pageTitle")
@@ -225,7 +229,7 @@ class ChatPage(QWidget):
         tab = QWidget(self)
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(12)
+        layout.setSpacing(8)
 
         copy = QLabel(
             "Keep chat messages and structured Twitch events visible together, then answer quickly with your composer or saved quick replies.",
@@ -410,7 +414,7 @@ class ChatPage(QWidget):
         card.layout.addLayout(toggles)
 
         self.feed = QListWidget(card)
-        self.feed.setMinimumHeight(220)
+        self.feed.setMinimumHeight(0)
         self.feed.itemSelectionChanged.connect(self._handle_message_selection)
         card.layout.addWidget(self.feed)
 
@@ -432,7 +436,7 @@ class ChatPage(QWidget):
         card.layout.addLayout(controls)
 
         self.activity_feed = QListWidget(card)
-        self.activity_feed.setMinimumHeight(220)
+        self.activity_feed.setMinimumHeight(0)
         card.layout.addWidget(self.activity_feed)
 
         self.activity_status = QLabel(card)
@@ -1321,10 +1325,12 @@ class ChatPlugin(AppPlugin):
         self._settings = ChatPluginConfig()
         self._page: ChatPage | None = None
         self.chat_service: TwitchChatService | None = None
+        self._persist_twitch_access_token_in_config = False
 
     def activate(self, context: PluginContext) -> None:
         self._context = context
         self._settings = ChatPluginConfig.from_dict(context.plugin_settings(self.plugin_id))
+        self._hydrate_credentials()
         self.chat_service = TwitchChatService(context.qt_parent)
         self._page = ChatPage(self._settings, context.qt_parent)
 
@@ -1357,6 +1363,7 @@ class ChatPlugin(AppPlugin):
 
         context.register_service("chat.twitch_service", self.chat_service)
         context.register_service("chat.plugin", self)
+        self._persist_runtime_settings()
 
     def page(self) -> PluginPage | None:
         if self._page is None:
@@ -1374,6 +1381,10 @@ class ChatPlugin(AppPlugin):
     def shutdown(self) -> None:
         if self.chat_service is not None and self._context is not None:
             self._context.schedule(self.chat_service.disconnect(silent=True))
+
+    async def shutdown_async(self) -> None:
+        if self.chat_service is not None:
+            await self.chat_service.disconnect(silent=True)
 
     async def _connect(self) -> None:
         if self.chat_service is None:
@@ -1574,4 +1585,36 @@ class ChatPlugin(AppPlugin):
             return
         self._settings.commands = self._page.command_rules()
         self._settings.quick_replies = self._page.quick_replies()
-        self._context.save_plugin_settings(self.plugin_id, self._settings.to_dict())
+        self._persist_twitch_access_token_in_config = (
+            bool(self._settings.twitch.access_token)
+            and not self._context.credential_store.store_secret(
+                CHAT_TWITCH_ACCESS_TOKEN,
+                self._settings.twitch.access_token,
+            )
+        )
+        self._context.save_plugin_settings(
+            self.plugin_id,
+            self._settings.to_dict(
+                include_access_token=self._persist_twitch_access_token_in_config,
+            ),
+        )
+
+    def _hydrate_credentials(self) -> None:
+        if self._context is None:
+            return
+        result = self._context.credential_store.load_or_migrate(
+            CHAT_TWITCH_ACCESS_TOKEN,
+            self._settings.twitch.access_token,
+        )
+        self._settings.twitch.access_token = result.value
+        self._persist_twitch_access_token_in_config = result.should_persist_in_config
+
+    def _persist_runtime_settings(self) -> None:
+        if self._context is None:
+            return
+        self._context.app_config.set_plugin_settings(
+            self.plugin_id,
+            self._settings.to_dict(
+                include_access_token=self._persist_twitch_access_token_in_config,
+            ),
+        )

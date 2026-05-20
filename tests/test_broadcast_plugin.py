@@ -3,6 +3,7 @@ from stream_control.plugins.broadcast.plugin import (
     BroadcastPluginConfig,
     BroadcastPreset,
 )
+from stream_control.services.twitch_service import TwitchCredentials
 
 
 def test_broadcast_config_manages_presets_and_checklist() -> None:
@@ -42,3 +43,14 @@ def test_broadcast_config_manages_presets_and_checklist() -> None:
     assert config.incomplete_checklist_labels() == ["Mic checked", "Scene ready"]
     assert config.remove_preset("Podcast") is True
     assert config.presets == []
+
+
+def test_broadcast_config_omits_access_token_from_persisted_settings() -> None:
+    config = BroadcastPluginConfig(
+        twitch=TwitchCredentials(client_id="client", access_token="secret-token", broadcaster_id="1234"),
+    )
+
+    payload = config.to_dict()
+
+    assert payload["twitch"]["client_id"] == "client"
+    assert "access_token" not in payload["twitch"]

@@ -4,7 +4,16 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from PySide6.QtCore import QObject, Signal
-from pynput.keyboard import GlobalHotKeys
+
+from stream_control.core.platform import macos_hotkey_permissions
+
+try:
+    from pynput.keyboard import GlobalHotKeys
+except Exception as exc:  # pragma: no cover - exercised only when pynput is unavailable
+    GlobalHotKeys = None  # type: ignore[assignment]
+    _PYNPUT_IMPORT_ERROR = exc
+else:
+    _PYNPUT_IMPORT_ERROR = None
 
 from stream_control.core.models import HotkeyBinding
 
@@ -84,6 +93,18 @@ class HotkeyService(QObject):
                 detail_bits.append(f"{len(report.unresolved_actions)} unresolved action(s)")
             detail = f" Skipped: {', '.join(detail_bits)}." if detail_bits else ""
             self._set_status(f"No global hotkeys are enabled.{detail}")
+            return
+
+        if GlobalHotKeys is None:
+            self._set_status(
+                "Global hotkeys are unavailable because pynput could not be loaded. "
+                f"Details: {_PYNPUT_IMPORT_ERROR}"
+            )
+            return
+
+        permissions = macos_hotkey_permissions()
+        if permissions is not None and not permissions.is_ready:
+            self._set_status(permissions.summary())
             return
 
         try:

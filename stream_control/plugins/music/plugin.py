@@ -24,11 +24,12 @@ from stream_control.core.models import OverlaySettings, TrackRecord
 from stream_control.plugins.base import AppPlugin, HotkeyAction, PluginPage
 from stream_control.plugins.context import PluginContext
 from stream_control.services.music_service import MusicService
-from stream_control.services.overlay_server import OverlayServer
+from stream_control.services.overlay_server import OverlayServer, OverlayServerStatus
 from stream_control.ui.widgets.common import (
     PanelCard,
     capture_table_column_widths,
     restore_table_column_widths,
+    set_status_label,
 )
 
 
@@ -93,6 +94,9 @@ class MusicPage(QWidget):
         self.overlay_url = QLineEdit(self._settings.overlay.now_playing_url, overlay_card)
         self.overlay_url.setReadOnly(True)
         overlay_card.layout.addWidget(self.overlay_url)
+        self.overlay_status = QLabel("", overlay_card)
+        self.overlay_status.setWordWrap(True)
+        overlay_card.layout.addWidget(self.overlay_status)
         overlay_card.layout.addWidget(QLabel("Overlay message when music is stopped:", overlay_card))
         self.overlay_idle_message = QLineEdit(self._settings.overlay_idle_message, overlay_card)
         self.overlay_idle_message.setPlaceholderText("No Music Playing")
@@ -187,6 +191,16 @@ class MusicPage(QWidget):
 
     def set_overlay_url(self, overlay_url: str) -> None:
         self.overlay_url.setText(overlay_url)
+
+    def set_overlay_status(self, tone: str, message: str) -> None:
+        if tone == "good":
+            set_status_label(self.overlay_status, True, message)
+            return
+        self.overlay_status.setObjectName("statusInfo" if tone == "info" else "statusWarn")
+        self.overlay_status.setText(message)
+        self.overlay_status.style().unpolish(self.overlay_status)
+        self.overlay_status.style().polish(self.overlay_status)
+        self.overlay_status.update()
 
     def _choose_folder(self) -> None:
         directory = QFileDialog.getExistingDirectory(self, "Choose a music folder")
@@ -301,6 +315,7 @@ class MusicPlugin(AppPlugin):
         self._page = MusicPage(self._settings, self.music_service, context.qt_parent)
         self._page.settings_changed.connect(self._save_settings)
         self._page.set_overlay_url(self._settings.overlay.now_playing_url)
+        self._refresh_overlay_status(initial=True)
 
         context.register_service("music.service", self.music_service)
         context.register_service("music.plugin", self)
@@ -340,6 +355,7 @@ class MusicPlugin(AppPlugin):
     def on_plugins_loaded(self, _host) -> None:
         if self.overlay_server is not None:
             self.overlay_server.start()
+            self._refresh_overlay_status()
         if self._settings.library_directories and self.music_service is not None:
             self._settings.music_library = self.music_service.load_library(self._settings.library_directories)
             self._save_settings()
@@ -352,7 +368,37 @@ class MusicPlugin(AppPlugin):
     def overlay_url(self) -> str:
         return self._settings.overlay.now_playing_url
 
+    def overlay_status(self) -> OverlayServerStatus:
+        if self.overlay_server is None:
+            return OverlayServerStatus(
+                enabled=self._settings.overlay.enabled,
+                running=False,
+                url=self.overlay_url,
+            )
+        return self.overlay_server.status()
+
     def _save_settings(self) -> None:
         if self._context is None:
             return
         self._context.save_plugin_settings(self.plugin_id, self._settings.to_dict())
+
+    def _refresh_overlay_status(self, initial: bool = False) -> None:
+        if self._page is None:
+            return
+        status = self.overlay_status()
+        if not status.enabled:
+            self._page.set_overlay_status("info", "Overlay server is disabled in config.")
+            return
+        if status.running:
+            self._page.set_overlay_status("good", f"Overlay server is live at {status.url}.")
+            return
+        if status.last_error:
+            self._page.set_overlay_status(
+                "warn",
+                f"Overlay failed to start: {status.last_error}. Free the port or update the overlay host/port in config.",
+            )
+            return
+        if initial:
+            self._page.set_overlay_status("info", "Overlay server will start when the app finishes loading.")
+            return
+        self._page.set_overlay_status("warn", "Overlay server is enabled but is not running yet.")

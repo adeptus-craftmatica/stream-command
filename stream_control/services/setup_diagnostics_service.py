@@ -4,14 +4,24 @@ import asyncio
 import subprocess
 import sys
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QObject
 
+from stream_control.core.credentials import (
+    BROADCAST_TWITCH_ACCESS_TOKEN,
+    CHAT_TWITCH_ACCESS_TOKEN,
+    STREAMLABS_TOKEN,
+    CredentialStore,
+)
 from stream_control.core.models import AppConfig, ObsSettings, OverlaySettings, StreamlabsSettings
-from stream_control.services.obs_service import ObsService
-from stream_control.services.streamlabs_service import StreamlabsService
-from stream_control.services.twitch_chat_service import TwitchChatService
+from stream_control.core.platform import is_macos, macos_hotkey_permissions
+from stream_control.services.overlay_server import OverlayServerStatus
+
+if TYPE_CHECKING:
+    from stream_control.services.obs_service import ObsService
+    from stream_control.services.streamlabs_service import StreamlabsService
+    from stream_control.services.twitch_chat_service import TwitchChatService
 
 
 @dataclass(slots=True)
@@ -41,9 +51,11 @@ class SetupDiagnosticsService(QObject):
     async def build_snapshot(
         self,
         app_config: AppConfig,
-        obs_service: ObsService,
-        streamlabs_service: StreamlabsService,
+        credential_store: CredentialStore,
+        obs_service: ObsService | None,
+        streamlabs_service: StreamlabsService | None,
         chat_service: TwitchChatService | None,
+        overlay_status: OverlayServerStatus | None = None,
     ) -> SetupSnapshot:
         integrations_raw = app_config.plugin_settings("integrations")
         broadcast_raw = app_config.plugin_settings("broadcast")
@@ -57,14 +69,23 @@ class SetupDiagnosticsService(QObject):
         output_target = str(broadcast_raw.get("output_target", "auto") or "auto")
         twitch_credentials = dict(broadcast_raw.get("twitch", {}))
         twitch_client_id = str(twitch_credentials.get("client_id", "")).strip()
-        twitch_access_token = str(twitch_credentials.get("access_token", "")).strip()
+        twitch_access_token_present = bool(
+            str(twitch_credentials.get("access_token", "")).strip()
+            or credential_store.has_secret(BROADCAST_TWITCH_ACCESS_TOKEN)
+        )
         stream_title = str(broadcast_raw.get("stream_title", "")).strip()
         category_name = str(broadcast_raw.get("category_name", "")).strip()
 
         chat_settings = dict(chat_raw.get("twitch", {}))
         chat_channel = str(chat_settings.get("channel", "")).strip()
         chat_client_id = str(chat_settings.get("client_id", "")).strip()
-        chat_token = str(chat_settings.get("access_token", "") or chat_settings.get("oauth_token", "")).strip()
+        chat_token_present = bool(
+            str(chat_settings.get("access_token", "") or chat_settings.get("oauth_token", "")).strip()
+            or credential_store.has_secret(CHAT_TWITCH_ACCESS_TOKEN)
+        )
+        streamlabs_token_present = bool(
+            streamlabs_settings.token.strip() or credential_store.has_secret(STREAMLABS_TOKEN)
+        )
 
         safe_test_active = any(
             service is not None and service.is_simulated
@@ -77,13 +98,13 @@ class SetupDiagnosticsService(QObject):
 
         obs_probe_task = None
         obs_process_task = None
-        if not obs_service.is_connected:
+        if obs_service is None or not obs_service.is_connected:
             obs_probe_task = asyncio.create_task(self._probe_endpoint(obs_settings.host, obs_settings.port))
             obs_process_task = asyncio.create_task(self._detect_process(["obs64.exe", "obs"]))
 
         streamlabs_probe_task = None
         streamlabs_process_task = None
-        if not streamlabs_service.is_connected:
+        if streamlabs_service is None or not streamlabs_service.is_connected:
             streamlabs_probe_task = asyncio.create_task(
                 self._probe_endpoint(streamlabs_settings.host, streamlabs_settings.port)
             )
@@ -117,20 +138,23 @@ class SetupDiagnosticsService(QObject):
                 obs_probe,
                 obs_process,
                 output_target,
-                streamlabs_service.is_connected,
+                bool(streamlabs_service is not None and streamlabs_service.is_connected),
             ),
             self._build_streamlabs_check(
                 streamlabs_service,
                 streamlabs_settings,
+                streamlabs_token_present,
                 streamlabs_probe,
                 streamlabs_process,
                 output_target,
-                obs_service.is_connected,
+                bool(obs_service is not None and obs_service.is_connected),
             ),
-            self._build_broadcast_check(twitch_client_id, twitch_access_token, stream_title, category_name),
-            self._build_chat_check(chat_service, chat_channel, chat_client_id, chat_token),
-            self._build_overlay_check(overlay_settings, overlay_probe),
+            self._build_broadcast_check(twitch_client_id, twitch_access_token_present, stream_title, category_name),
+            self._build_chat_check(chat_service, chat_channel, chat_client_id, chat_token_present),
         ]
+        if is_macos():
+            checks.append(self._build_macos_permissions_check())
+        checks.append(self._build_overlay_check(overlay_settings, overlay_probe, overlay_status))
 
         output_check = next(check for check in checks if check.key == "output")
         broadcast_check = next(check for check in checks if check.key == "broadcast")
@@ -170,8 +194,8 @@ class SetupDiagnosticsService(QObject):
     def _build_output_check(
         self,
         output_target: str,
-        obs_service: ObsService,
-        streamlabs_service: StreamlabsService,
+        obs_service: ObsService | None,
+        streamlabs_service: StreamlabsService | None,
         obs_reachable: bool,
         streamlabs_reachable: bool,
     ) -> SetupCheck:
@@ -183,7 +207,11 @@ class SetupDiagnosticsService(QObject):
             candidates = [item for item in candidates if item[0] == output_target]
 
         real_connected = next(
-            ((label, service) for _, label, service in candidates if service.is_connected and not service.is_simulated),
+            (
+                (label, service)
+                for _, label, service in candidates
+                if service is not None and service.is_connected and not service.is_simulated
+            ),
             None,
         )
         if real_connected is not None:
@@ -197,7 +225,11 @@ class SetupDiagnosticsService(QObject):
             )
 
         simulated = next(
-            ((label, service) for _, label, service in candidates if service.is_connected and service.is_simulated),
+            (
+                (label, service)
+                for _, label, service in candidates
+                if service is not None and service.is_connected and service.is_simulated
+            ),
             None,
         )
         if simulated is not None:
@@ -209,6 +241,18 @@ class SetupDiagnosticsService(QObject):
                 summary=f"{label} simulator is active.",
                 detail="You can rehearse scenes and stream controls without connecting a real output app.",
                 action="Stop the simulator and connect a real output app on Integrations when you want to validate the live path.",
+            )
+
+        unavailable = [label for _, label, service in candidates if service is None]
+        if candidates and all(service is None for _, _, service in candidates):
+            joined = ", ".join(unavailable)
+            return SetupCheck(
+                key="output",
+                title="Live Output Path",
+                status="attention",
+                summary=f"{joined} control is unavailable in this app session.",
+                detail="The related integration plugin did not finish loading, so Stream Control cannot open a live output connection for that app right now.",
+                action="Relaunch after reinstalling the app or its missing dependencies, then reconnect your output app on Integrations.",
             )
 
         if obs_reachable or streamlabs_reachable:
@@ -232,7 +276,7 @@ class SetupDiagnosticsService(QObject):
 
     def _build_obs_check(
         self,
-        obs_service: ObsService,
+        obs_service: ObsService | None,
         settings: ObsSettings,
         probe: tuple[bool, str],
         process_running: bool | None,
@@ -242,6 +286,15 @@ class SetupDiagnosticsService(QObject):
         relevant = output_target == "obs" or settings.auto_connect or (
             output_target == "auto" and not other_output_connected
         )
+        if obs_service is None:
+            return SetupCheck(
+                key="obs",
+                title="OBS Studio",
+                status="attention" if relevant else "optional",
+                summary="OBS control is unavailable in this app session.",
+                detail="The OBS integration plugin did not finish loading, so Stream Control cannot open an OBS WebSocket connection right now.",
+                action="Relaunch after reinstalling the app or its missing dependencies if you want OBS to be your live controller.",
+            )
         if obs_service.is_simulated:
             return SetupCheck(
                 key="obs",
@@ -287,17 +340,26 @@ class SetupDiagnosticsService(QObject):
 
     def _build_streamlabs_check(
         self,
-        streamlabs_service: StreamlabsService,
+        streamlabs_service: StreamlabsService | None,
         settings: StreamlabsSettings,
+        token_present: bool,
         probe: tuple[bool, str],
         process_running: bool | None,
         output_target: str,
         other_output_connected: bool,
     ) -> SetupCheck:
-        token_present = bool(settings.token.strip())
         relevant = output_target == "streamlabs" or settings.auto_connect or token_present or (
             output_target == "auto" and not other_output_connected
         )
+        if streamlabs_service is None:
+            return SetupCheck(
+                key="streamlabs",
+                title="Streamlabs Desktop",
+                status="attention" if relevant else "optional",
+                summary="Streamlabs Desktop control is unavailable in this app session.",
+                detail="The Streamlabs integration plugin did not finish loading, so Stream Control cannot open a Streamlabs Desktop remote-control session right now.",
+                action="Relaunch after reinstalling the app or its missing dependencies if you want Streamlabs Desktop control here.",
+            )
         if streamlabs_service.is_simulated:
             return SetupCheck(
                 key="streamlabs",
@@ -353,11 +415,11 @@ class SetupDiagnosticsService(QObject):
     def _build_broadcast_check(
         self,
         client_id: str,
-        access_token: str,
+        has_access_token: bool,
         stream_title: str,
         category_name: str,
     ) -> SetupCheck:
-        if not client_id and not access_token:
+        if not client_id and not has_access_token:
             return SetupCheck(
                 key="broadcast",
                 title="Twitch Broadcast Sync",
@@ -366,7 +428,7 @@ class SetupDiagnosticsService(QObject):
                 detail="You can still test scene switching and output control without this. Add it when you want title and category syncing.",
                 action="Open Broadcast and add a Twitch client ID plus a user access token with channel:manage:broadcast.",
             )
-        if not client_id or not access_token:
+        if not client_id or not has_access_token:
             return SetupCheck(
                 key="broadcast",
                 title="Twitch Broadcast Sync",
@@ -396,7 +458,7 @@ class SetupDiagnosticsService(QObject):
         chat_service: TwitchChatService | None,
         channel: str,
         client_id: str,
-        access_token: str,
+        has_access_token: bool,
     ) -> SetupCheck:
         if chat_service is not None and chat_service.is_simulated:
             return SetupCheck(
@@ -414,7 +476,7 @@ class SetupDiagnosticsService(QObject):
                 summary="Connected to Twitch chat.",
                 detail="The in-app feed, moderation tools, and engagement actions are connected through Twitch EventSub and Helix.",
             )
-        if not channel and not client_id and not access_token:
+        if not channel and not client_id and not has_access_token:
             return SetupCheck(
                 key="chat",
                 title="Chat Management",
@@ -423,7 +485,7 @@ class SetupDiagnosticsService(QObject):
                 detail="That is okay if you are focusing on output control first. Add chat credentials when you want the EventSub feed, viewer cards, moderation, or engagement tools.",
                 action="Open Chat and add the Twitch channel, client ID, and user access token.",
             )
-        if not channel or not client_id or not access_token:
+        if not channel or not client_id or not has_access_token:
             return SetupCheck(
                 key="chat",
                 title="Chat Management",
@@ -445,6 +507,7 @@ class SetupDiagnosticsService(QObject):
         self,
         settings: OverlaySettings,
         probe: tuple[bool, str],
+        runtime_status: OverlayServerStatus | None,
     ) -> SetupCheck:
         if not settings.enabled:
             return SetupCheck(
@@ -454,6 +517,23 @@ class SetupDiagnosticsService(QObject):
                 summary="The now-playing overlay server is disabled.",
                 detail="That is fine if you do not want a browser source for music yet.",
                 action="Open Music and enable or configure the overlay when you want on-stream track titles.",
+            )
+        if runtime_status is not None and runtime_status.running:
+            return SetupCheck(
+                key="overlay",
+                title="Music Overlay",
+                status="ready",
+                summary=f"Overlay server is reachable at {runtime_status.url}.",
+                detail="OBS or Streamlabs can use this browser source right now for now-playing information.",
+            )
+        if runtime_status is not None and runtime_status.last_error:
+            return SetupCheck(
+                key="overlay",
+                title="Music Overlay",
+                status="attention",
+                summary="The overlay server failed to start.",
+                detail=f"Music tried to start the overlay server but got this error: {runtime_status.last_error}",
+                action="Open Music to review the overlay status, then free the port or change the overlay host/port if another app is using it.",
             )
         if probe[0]:
             return SetupCheck(
@@ -470,6 +550,33 @@ class SetupDiagnosticsService(QObject):
             summary="The overlay server is enabled but not reachable yet.",
             detail=f"No response came back from {settings.now_playing_url}, so the Music plugin may not have started its overlay server or the port may be blocked.",
             action="Open Music once after launch and confirm the overlay URL is present, or change the overlay port if another app is using it.",
+        )
+
+    def _build_macos_permissions_check(self) -> SetupCheck:
+        permissions = macos_hotkey_permissions()
+        if permissions is None or permissions.is_ready:
+            return SetupCheck(
+                key="permissions",
+                title="macOS Permissions",
+                status="ready",
+                summary="macOS privacy permissions are ready.",
+                detail="Global hotkeys should be able to listen for shortcuts from this Mac session.",
+            )
+
+        missing = " and ".join(permissions.missing_items)
+        return SetupCheck(
+            key="permissions",
+            title="macOS Permissions",
+            status="attention",
+            summary=f"Global hotkeys still need {missing} access.",
+            detail=(
+                "macOS is currently blocking background shortcut listening. Until that is granted, the Hotkeys page "
+                "can still save bindings, but the Mac will not fire them globally."
+            ),
+            action=(
+                "Open System Settings > Privacy & Security and allow Stream Control or the Python interpreter under "
+                "Accessibility and Input Monitoring, then relaunch the app."
+            ),
         )
 
     async def _probe_endpoint(self, host: str, port: int) -> tuple[bool, str]:

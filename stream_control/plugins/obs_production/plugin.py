@@ -682,13 +682,21 @@ class ObsProductionPage(QWidget):
         self._set_combo_items(self.profile_combo, profiles, current_profile)
 
         replay_active = bool(payload.get("replay_buffer_active", False))
-        self.replay_state.setText(
-            "Replay buffer: Active" if replay_active else "Replay buffer: Standing by"
-        )
+        replay_available = bool(payload.get("replay_buffer_available", True))
+        replay_detail = str(payload.get("replay_buffer_detail", "") or "")
+        if not replay_available:
+            self.replay_state.setText("Replay buffer: Unavailable in OBS")
+        else:
+            self.replay_state.setText(
+                "Replay buffer: Active" if replay_active else "Replay buffer: Standing by"
+            )
         last_replay_path = str(payload.get("last_replay_path", "") or "")
-        self.replay_last_path.setText(
-            f"Last replay save: {last_replay_path}" if last_replay_path else "Last replay save: Not saved yet"
-        )
+        if last_replay_path:
+            self.replay_last_path.setText(f"Last replay save: {last_replay_path}")
+        elif not replay_available and replay_detail:
+            self.replay_last_path.setText(replay_detail)
+        else:
+            self.replay_last_path.setText("Last replay save: Not saved yet")
         self.snapshot_program_summary.setText(
             f"Program scene snapshot target: {program_scene}" if program_scene else "Program scene snapshot target: Not connected"
         )

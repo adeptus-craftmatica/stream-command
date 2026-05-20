@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/StreamControl.iml" filepath="$PROJECT_DIR$/.idea/StreamControl.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/stream-command.iml" filepath="$PROJECT_DIR$/.idea/stream-command.iml" />
     </modules>
   </component>
 </project>

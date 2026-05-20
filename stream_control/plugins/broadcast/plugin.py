@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -19,10 +20,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from stream_control.core.credentials import BROADCAST_TWITCH_ACCESS_TOKEN
 from stream_control.plugins.base import AppPlugin, HotkeyAction, PluginPage
 from stream_control.plugins.context import PluginContext
-from stream_control.services.obs_service import ObsService
-from stream_control.services.streamlabs_service import StreamlabsService
 from stream_control.services.twitch_service import (
     TwitchApiError,
     TwitchCategory,
@@ -31,6 +31,10 @@ from stream_control.services.twitch_service import (
     TwitchService,
 )
 from stream_control.ui.widgets.common import PanelCard, set_status_label
+
+if TYPE_CHECKING:
+    from stream_control.services.obs_service import ObsService
+    from stream_control.services.streamlabs_service import StreamlabsService
 
 
 @dataclass(slots=True)
@@ -71,10 +75,13 @@ class BroadcastPluginConfig:
     checklist: list[BroadcastChecklistItem] = field(default_factory=default_broadcast_checklist)
     require_checklist_before_live: bool = True
 
-    def to_dict(self) -> dict[str, object]:
+    def to_dict(self, *, include_access_token: bool = False) -> dict[str, object]:
+        twitch = asdict(self.twitch)
+        if not include_access_token:
+            twitch.pop("access_token", None)
         return {
             "output_target": self.output_target,
-            "twitch": asdict(self.twitch),
+            "twitch": twitch,
             "stream_title": self.stream_title,
             "category_id": self.category_id,
             "category_name": self.category_name,
@@ -813,10 +820,12 @@ class BroadcastPlugin(AppPlugin):
         self.streamlabs_service: StreamlabsService | None = None
         self.twitch_service: TwitchService | None = None
         self._stream_status_cache: dict[str, dict[str, object]] = {}
+        self._persist_twitch_access_token_in_config = False
 
     def activate(self, context: PluginContext) -> None:
         self._context = context
         self._settings = BroadcastPluginConfig.from_dict(context.plugin_settings(self.plugin_id))
+        self._hydrate_credentials()
         self.obs_service = context.get_service("integrations.obs_service")
         self.streamlabs_service = context.get_service("integrations.streamlabs_service")
         self.twitch_service = TwitchService(context.qt_parent)
@@ -838,6 +847,7 @@ class BroadcastPlugin(AppPlugin):
         self._bind_output_service("obs", self.obs_service)
         self._bind_output_service("streamlabs", self.streamlabs_service)
         context.register_service("broadcast.plugin", self)
+        self._persist_runtime_settings()
 
     def page(self) -> PluginPage | None:
         if self._page is None:
@@ -1197,4 +1207,36 @@ class BroadcastPlugin(AppPlugin):
     def _save_settings(self) -> None:
         if self._context is None:
             return
-        self._context.save_plugin_settings(self.plugin_id, self._settings.to_dict())
+        self._persist_twitch_access_token_in_config = (
+            bool(self._settings.twitch.access_token)
+            and not self._context.credential_store.store_secret(
+                BROADCAST_TWITCH_ACCESS_TOKEN,
+                self._settings.twitch.access_token,
+            )
+        )
+        self._context.save_plugin_settings(
+            self.plugin_id,
+            self._settings.to_dict(
+                include_access_token=self._persist_twitch_access_token_in_config,
+            ),
+        )
+
+    def _hydrate_credentials(self) -> None:
+        if self._context is None:
+            return
+        result = self._context.credential_store.load_or_migrate(
+            BROADCAST_TWITCH_ACCESS_TOKEN,
+            self._settings.twitch.access_token,
+        )
+        self._settings.twitch.access_token = result.value
+        self._persist_twitch_access_token_in_config = result.should_persist_in_config
+
+    def _persist_runtime_settings(self) -> None:
+        if self._context is None:
+            return
+        self._context.app_config.set_plugin_settings(
+            self.plugin_id,
+            self._settings.to_dict(
+                include_access_token=self._persist_twitch_access_token_in_config,
+            ),
+        )

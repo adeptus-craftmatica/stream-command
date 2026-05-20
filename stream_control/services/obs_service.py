@@ -853,6 +853,8 @@ class ObsService(QObject):
             "current_transition": self._simulated_current_transition,
             "transition_duration": self._simulated_transition_duration,
             "replay_buffer_active": self._simulated_replay_buffer_active,
+            "replay_buffer_available": True,
+            "replay_buffer_detail": "Replay buffer controls are available in the simulator.",
             "last_replay_path": self._simulated_last_replay_path,
             "scene_collections": list(self._simulated_scene_collections),
             "current_scene_collection": self._simulated_current_scene_collection,
@@ -966,32 +968,40 @@ class ObsService(QObject):
             or 300
         )
 
-        replay_status_response = self._client.get_replay_buffer_status()
-        replay_buffer_active = bool(
-            self._response_value(
-                replay_status_response,
-                "output_active",
-                "outputActive",
-                default=False,
-            )
-        )
-
+        replay_buffer_available = True
+        replay_buffer_detail = "Replay buffer controls are available."
         last_replay_path = ""
         try:
-            replay_path_response = self._client.get_last_replay_buffer_replay()
-            last_replay_path = str(
+            replay_status_response = self._client.get_replay_buffer_status()
+            replay_buffer_active = bool(
                 self._response_value(
-                    replay_path_response,
-                    "saved_replay_path",
-                    "savedReplayPath",
-                    "saved_replay_file",
-                    "savedReplayFile",
-                    default="",
+                    replay_status_response,
+                    "output_active",
+                    "outputActive",
+                    default=False,
                 )
-                or ""
             )
-        except Exception:
-            last_replay_path = ""
+
+            try:
+                replay_path_response = self._client.get_last_replay_buffer_replay()
+                last_replay_path = str(
+                    self._response_value(
+                        replay_path_response,
+                        "saved_replay_path",
+                        "savedReplayPath",
+                        "saved_replay_file",
+                        "savedReplayFile",
+                        default="",
+                    )
+                    or ""
+                )
+            except Exception:
+                last_replay_path = ""
+                replay_buffer_detail = "Replay buffer is active, but OBS has not reported a saved replay yet."
+        except Exception as exc:
+            replay_buffer_active = False
+            replay_buffer_available = False
+            replay_buffer_detail = self._replay_buffer_unavailable_detail(exc)
 
         scene_collection_response = self._client.get_scene_collection_list()
         scene_collections = self._normalize_named_items(
@@ -1049,6 +1059,8 @@ class ObsService(QObject):
             "current_transition": current_transition,
             "transition_duration": transition_duration,
             "replay_buffer_active": replay_buffer_active,
+            "replay_buffer_available": replay_buffer_available,
+            "replay_buffer_detail": replay_buffer_detail,
             "last_replay_path": last_replay_path,
             "scene_collections": scene_collections,
             "current_scene_collection": current_scene_collection,
@@ -1313,6 +1325,8 @@ class ObsService(QObject):
             "current_transition": "",
             "transition_duration": 300,
             "replay_buffer_active": False,
+            "replay_buffer_available": False,
+            "replay_buffer_detail": "Replay buffer is unavailable while OBS is disconnected.",
             "last_replay_path": "",
             "scene_collections": [],
             "current_scene_collection": "",
@@ -1320,6 +1334,19 @@ class ObsService(QObject):
             "current_profile": "",
             "record_active": False,
         }
+
+    @staticmethod
+    def _replay_buffer_unavailable_detail(exc: Exception) -> str:
+        raw = " ".join(str(exc).split()).strip()
+        if not raw:
+            return "Replay buffer status is unavailable. Enable Replay Buffer in OBS Output settings if you want clip controls here."
+        lowered = raw.lower()
+        if "replay" in lowered or "buffer" in lowered or "output" in lowered or "feature" in lowered:
+            return (
+                "Replay buffer is unavailable in OBS right now. Enable Replay Buffer in OBS Output settings "
+                f"if you want clip controls here. Details: {raw}"
+            )
+        return f"Replay buffer status is unavailable right now. Details: {raw}"
 
     @staticmethod
     def _normalize_named_items(raw_items: Any, *names: str) -> list[str]:
