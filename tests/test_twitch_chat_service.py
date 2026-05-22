@@ -1,7 +1,9 @@
 import asyncio
+import threading
 
 from PySide6.QtWidgets import QApplication
 
+from stream_control.services import twitch_chat_service as twitch_chat_service_module
 from stream_control.services.twitch_chat_service import (
     AutoModQueueItem,
     ChatActivity,
@@ -68,3 +70,34 @@ def test_twitch_chat_service_simulator_supports_chat_moderation_and_engagement()
     assert summaries and summaries[-1]["mode"] == "disconnected"
     assert automod_snapshots and automod_snapshots[-1] == []
     assert app is not None
+
+
+def test_twitch_chat_service_uses_tls_context_for_eventsub_socket(monkeypatch) -> None:
+    service = TwitchChatService()
+    service._stop_event = threading.Event()
+    expected_sslopt = {"context": object()}
+    seen: dict[str, object] = {}
+
+    class _FakeWebSocketApp:
+        def __init__(self, url, on_message, on_error, on_close) -> None:
+            seen["url"] = url
+            seen["callbacks"] = (on_message, on_error, on_close)
+
+        def run_forever(self, **kwargs) -> None:
+            seen["kwargs"] = kwargs
+            service._stop_event.set()
+
+    monkeypatch.setattr(twitch_chat_service_module, "websocket_ssl_options", lambda: expected_sslopt)
+    monkeypatch.setattr(
+        twitch_chat_service_module,
+        "websocket",
+        type("_FakeWebSocketModule", (), {"WebSocketApp": _FakeWebSocketApp}),
+    )
+
+    service._run_eventsub_forever()
+
+    assert seen["url"] == TwitchChatService.EVENTSUB_URL
+    assert seen["kwargs"] == {
+        "skip_utf8_validation": True,
+        "sslopt": expected_sslopt,
+    }

@@ -4,6 +4,7 @@ from PySide6.QtWidgets import QApplication, QWidget
 
 from stream_control.core.models import AppConfig
 from stream_control.core.paths import AppPaths
+from stream_control.plugins import context as context_module
 from stream_control.plugins.base import AppPlugin, FailedPlugin, HotkeyAction, PluginPage
 from stream_control.plugins.context import PluginContext
 from stream_control.plugins.host import PluginHost
@@ -144,4 +145,35 @@ def test_plugin_host_replaces_startup_failures_with_failed_plugin_and_removes_pl
     assert context.get_service("broken.service") is None
     assert context.get_service("broken.late_service") is None
     assert healthy.activated and healthy.loaded
+    assert app is not None
+
+
+def test_plugin_context_schedule_logs_unhandled_task_exceptions(monkeypatch) -> None:
+    app = QApplication.instance() or QApplication([])
+    context = PluginContext(
+        app_config=AppConfig(),
+        app_paths=AppPaths.build(),
+        qt_parent=QWidget(),
+        save_callback=lambda: None,
+    )
+    entries: list[object] = []
+
+    def _capture_error(*args, **kwargs) -> None:
+        entries.append((args, kwargs))
+
+    monkeypatch.setattr(context_module.logger, "error", _capture_error)
+
+    async def _boom() -> None:
+        raise RuntimeError("boom")
+
+    async def scenario() -> None:
+        context.schedule(_boom())
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+    asyncio.run(scenario())
+
+    assert entries
+    assert entries[0][0][0] == "Scheduled plugin task failed."
+    assert isinstance(entries[0][1]["exc_info"][1], RuntimeError)
     assert app is not None

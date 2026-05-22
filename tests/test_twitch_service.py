@@ -1,6 +1,11 @@
 import asyncio
+import ssl
+from urllib import error
 
-from stream_control.services.twitch_service import TwitchCredentials, TwitchService
+import pytest
+
+from stream_control.services import twitch_service as twitch_service_module
+from stream_control.services.twitch_service import TwitchApiError, TwitchCredentials, TwitchService
 
 
 class _FakeTwitchService(TwitchService):
@@ -64,3 +69,47 @@ def test_twitch_service_resolves_broadcaster_and_updates_channel_info() -> None:
     assert service.last_patch == {"title": "Fresh Title", "game_id": "509660"}
     assert updated.title == "Fresh Title"
     assert updated.category_name == "Art"
+
+
+def test_twitch_service_uses_shared_tls_context_for_api_requests(monkeypatch) -> None:
+    service = TwitchService()
+    expected_context = object()
+    seen: dict[str, object] = {}
+
+    class _Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return b"{}"
+
+    def _fake_urlopen(req, *, timeout, context):
+        seen["url"] = req.full_url
+        seen["timeout"] = timeout
+        seen["context"] = context
+        return _Response()
+
+    monkeypatch.setattr(twitch_service_module, "tls_context", lambda: expected_context)
+    monkeypatch.setattr(twitch_service_module.request, "urlopen", _fake_urlopen)
+
+    payload = service._request_json("GET", "/users", "client-id", "token")
+
+    assert payload == {}
+    assert seen["url"] == "https://api.twitch.tv/helix/users"
+    assert seen["timeout"] == 10
+    assert seen["context"] is expected_context
+
+
+def test_twitch_service_surfaces_certificate_failures_with_guidance(monkeypatch) -> None:
+    service = TwitchService()
+
+    def _fake_urlopen(*_args, **_kwargs):
+        raise error.URLError(ssl.SSLCertVerificationError("certificate verify failed"))
+
+    monkeypatch.setattr(twitch_service_module.request, "urlopen", _fake_urlopen)
+
+    with pytest.raises(TwitchApiError, match="missing trusted root certificates"):
+        service._request_json("GET", "/users", "client-id", "token")

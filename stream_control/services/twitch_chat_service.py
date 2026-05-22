@@ -11,6 +11,7 @@ from urllib import error, parse, request
 
 from PySide6.QtCore import QObject, Signal
 
+from stream_control.core.tls import describe_tls_error, tls_context, websocket_ssl_options
 from stream_control.services.twitch_service import TwitchApiError
 
 try:  # pragma: no cover - exercised through runtime integration
@@ -1099,11 +1100,13 @@ class TwitchChatService(QObject):
             )
             self._ws_app = app
             try:
-                app.run_forever(skip_utf8_validation=True)
+                app.run_forever(skip_utf8_validation=True, sslopt=websocket_ssl_options())
             except Exception as exc:
-                self._transport_error = str(exc)
+                self._transport_error = describe_tls_error(exc)
                 self._session_ready.set()
-                self._notify_async(lambda: self.connection_changed.emit(False, f"Twitch EventSub error: {exc}"))
+                self._notify_async(
+                    lambda: self.connection_changed.emit(False, f"Twitch EventSub error: {describe_tls_error(exc)}")
+                )
             if self._stop_event.is_set():
                 return
             if self._reconnect_url:
@@ -1159,7 +1162,7 @@ class TwitchChatService(QObject):
         self._notify_async(lambda: self._handle_eventsub_notification(subscription_type, event))
 
     def _on_ws_error(self, _ws: Any, error_value: Any) -> None:  # pragma: no cover - exercised manually
-        self._transport_error = str(error_value)
+        self._transport_error = describe_tls_error(error_value)
         self._session_ready.set()
 
     def _on_ws_close(self, _ws: Any, _status_code: Any, _message: Any) -> None:  # pragma: no cover - exercised manually
@@ -1845,14 +1848,14 @@ class TwitchChatService(QObject):
         )
 
         try:
-            with request.urlopen(req, timeout=10) as response:
+            with request.urlopen(req, timeout=10, context=tls_context()) as response:
                 raw = response.read()
         except error.HTTPError as exc:
             raw = exc.read()
             message = self._error_message(raw) or f"Twitch API request failed with HTTP {exc.code}."
             raise TwitchApiError(message) from exc
         except error.URLError as exc:
-            raise TwitchApiError(f"Could not reach Twitch: {exc.reason}") from exc
+            raise TwitchApiError(f"Could not reach Twitch: {describe_tls_error(exc.reason)}") from exc
 
         if not raw:
             return {}

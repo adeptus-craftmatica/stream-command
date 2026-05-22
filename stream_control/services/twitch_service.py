@@ -8,6 +8,8 @@ from urllib import error, parse, request
 
 from PySide6.QtCore import QObject
 
+from stream_control.core.tls import describe_tls_error, tls_context
+
 
 @dataclass(slots=True)
 class TwitchCredentials:
@@ -210,14 +212,14 @@ class TwitchService(QObject):
         )
 
         try:
-            with request.urlopen(req, timeout=10) as response:
+            with request.urlopen(req, timeout=10, context=tls_context()) as response:
                 raw = response.read()
         except error.HTTPError as exc:
             raw = exc.read()
             message = self._error_message(raw) or f"Twitch API request failed with HTTP {exc.code}."
             raise TwitchApiError(message) from exc
         except error.URLError as exc:
-            raise TwitchApiError(f"Could not reach Twitch: {exc.reason}") from exc
+            raise TwitchApiError(f"Could not reach Twitch: {describe_tls_error(exc.reason)}") from exc
 
         if not raw:
             return {}

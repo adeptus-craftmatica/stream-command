@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import asdict, dataclass, field
 
-from PySide6.QtCore import QSignalBlocker, Qt, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtCore import QSignalBlocker, Qt, QUrl, Signal
+from PySide6.QtGui import QColor, QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -28,6 +29,7 @@ from PySide6.QtWidgets import (
 from stream_control.core.credentials import CHAT_TWITCH_ACCESS_TOKEN
 from stream_control.plugins.base import AppPlugin, PluginPage
 from stream_control.plugins.context import PluginContext
+from stream_control.services.twitch_auth_service import TwitchAuthError, TwitchAuthService
 from stream_control.services.twitch_chat_service import (
     AutoModQueueItem,
     ChatActivity,
@@ -65,6 +67,21 @@ def default_quick_replies() -> list[QuickReply]:
         QuickReply("Thanks", "Thanks for hanging out tonight."),
         QuickReply("Question", "Drop your question in chat and I will get to it."),
     ]
+
+
+CHAT_AUTH_SCOPES = [
+    "user:read:chat",
+    "user:write:chat",
+    "moderator:manage:chat_messages",
+    "moderator:manage:banned_users",
+    "moderator:manage:automod",
+    "moderator:manage:announcements",
+    "moderator:manage:shoutouts",
+    "moderator:read:followers",
+    "moderator:read:chatters",
+    "channel:manage:polls",
+    "channel:manage:predictions",
+]
 
 
 @dataclass(slots=True)
@@ -139,6 +156,7 @@ class ChatPluginConfig:
 
 class ChatPage(QWidget):
     settings_changed = Signal()
+    request_authorize_twitch = Signal()
     request_connect = Signal()
     request_disconnect = Signal()
     request_start_simulator = Signal()
@@ -785,15 +803,18 @@ class ChatPage(QWidget):
         card.layout.addWidget(self.auto_simulator)
 
         buttons = QHBoxLayout()
+        authorize_button = QPushButton("Authorize With Twitch", card)
+        authorize_button.clicked.connect(self._request_twitch_authorization_now)
         connect_button = QPushButton("Connect", card)
         connect_button.setObjectName("primaryButton")
-        connect_button.clicked.connect(self.request_connect.emit)
+        connect_button.clicked.connect(self._request_connect_now)
         disconnect_button = QPushButton("Disconnect", card)
         disconnect_button.clicked.connect(self.request_disconnect.emit)
         sim_button = QPushButton("Start Test Chat", card)
         sim_button.clicked.connect(self.request_start_simulator.emit)
         stop_sim_button = QPushButton("Stop Test Chat", card)
         stop_sim_button.clicked.connect(self.request_stop_simulator.emit)
+        buttons.addWidget(authorize_button)
         buttons.addWidget(connect_button)
         buttons.addWidget(disconnect_button)
         buttons.addWidget(sim_button)
@@ -1186,6 +1207,23 @@ class ChatPage(QWidget):
         self._settings.twitch.simulator_auto_start = self.auto_simulator.isChecked()
         self.settings_changed.emit()
 
+    def sync_connection_settings(self) -> None:
+        self._store_connection_settings()
+
+    def _request_connect_now(self) -> None:
+        self.sync_connection_settings()
+        channel = self._settings.twitch.channel.strip().lstrip("#")
+        if channel:
+            self.set_connection_status(True, f"Connecting to Twitch chat for #{channel}...")
+        else:
+            self.set_connection_status(True, "Connecting to Twitch chat...")
+        self.request_connect.emit()
+
+    def _request_twitch_authorization_now(self) -> None:
+        self.sync_connection_settings()
+        self.set_connection_status(True, "Opening Twitch sign-in...")
+        self.request_authorize_twitch.emit()
+
     def _store_moderation_settings(self, *_args: object) -> None:
         self._settings.timeout_duration_seconds = int(self.timeout_duration.value())
         self._settings.moderation_reason = self.moderation_reason.text().strip()
@@ -1325,6 +1363,8 @@ class ChatPlugin(AppPlugin):
         self._settings = ChatPluginConfig()
         self._page: ChatPage | None = None
         self.chat_service: TwitchChatService | None = None
+        self.auth_service: TwitchAuthService | None = None
+        self._oauth_task: asyncio.Task[None] | None = None
         self._persist_twitch_access_token_in_config = False
 
     def activate(self, context: PluginContext) -> None:
@@ -1332,9 +1372,11 @@ class ChatPlugin(AppPlugin):
         self._settings = ChatPluginConfig.from_dict(context.plugin_settings(self.plugin_id))
         self._hydrate_credentials()
         self.chat_service = TwitchChatService(context.qt_parent)
+        self.auth_service = TwitchAuthService()
         self._page = ChatPage(self._settings, context.qt_parent)
 
         self._page.settings_changed.connect(self._save_settings)
+        self._page.request_authorize_twitch.connect(lambda: self._schedule_twitch_authorization(context))
         self._page.request_connect.connect(lambda: context.schedule(self._connect()))
         self._page.request_disconnect.connect(lambda: context.schedule(self.chat_service.disconnect()))
         self._page.request_start_simulator.connect(lambda: context.schedule(self._start_simulator()))
@@ -1379,20 +1421,75 @@ class ChatPlugin(AppPlugin):
             self._context.schedule(self._connect())
 
     def shutdown(self) -> None:
+        if self._oauth_task is not None and not self._oauth_task.done():
+            self._oauth_task.cancel()
         if self.chat_service is not None and self._context is not None:
             self._context.schedule(self.chat_service.disconnect(silent=True))
 
     async def shutdown_async(self) -> None:
+        if self._oauth_task is not None and not self._oauth_task.done():
+            self._oauth_task.cancel()
         if self.chat_service is not None:
             await self.chat_service.disconnect(silent=True)
 
     async def _connect(self) -> None:
         if self.chat_service is None:
             return
+        if self._page is not None:
+            self._page.sync_connection_settings()
         try:
             await self.chat_service.connect(self._settings.twitch)
         except TwitchApiError as exc:
             self._set_connection_error(str(exc))
+
+    def _schedule_twitch_authorization(self, context: PluginContext) -> None:
+        if self._oauth_task is not None and not self._oauth_task.done():
+            self._set_connection_error("Twitch authorization is already in progress.")
+            return
+        self._oauth_task = context.schedule(self._authorize_twitch())
+
+    async def _authorize_twitch(self) -> None:
+        if self._page is None or self.auth_service is None:
+            return
+        self._page.sync_connection_settings()
+        client_id = self._settings.twitch.client_id.strip()
+        if not client_id:
+            self._set_connection_error("Enter the Twitch client ID before authorizing.")
+            return
+
+        try:
+            authorization = await self.auth_service.start_device_authorization(client_id, CHAT_AUTH_SCOPES)
+            self._page.set_connection_status(
+                True,
+                "Twitch sign-in opened in your browser. "
+                f"If it did not open, visit {authorization.verification_uri} and enter code {authorization.user_code}. "
+                "Waiting for approval..."
+            )
+            QDesktopServices.openUrl(QUrl(authorization.verification_uri))
+            token = await self.auth_service.poll_device_authorization(client_id, authorization)
+            validation = await self.auth_service.validate_access_token(token.access_token)
+        except TwitchAuthError as exc:
+            self._set_connection_error(str(exc))
+            return
+
+        self._settings.twitch.access_token = token.access_token
+        if not self._settings.twitch.channel.strip() and validation.login:
+            self._settings.twitch.channel = validation.login
+        if not self._settings.twitch.broadcaster_id.strip() and validation.user_id:
+            self._settings.twitch.broadcaster_id = validation.user_id
+        self._page.access_token.setText(token.access_token)
+        if self._settings.twitch.channel.strip():
+            self._page.channel_name.setText(self._settings.twitch.channel)
+        if self._settings.twitch.broadcaster_id.strip():
+            self._page.broadcaster_id.setText(self._settings.twitch.broadcaster_id)
+        self._save_settings()
+
+        target = self._settings.twitch.channel.strip().lstrip("#")
+        if target:
+            message = f"Twitch authorized as {validation.login or target}. Token saved securely. Click Connect to join #{target}."
+        else:
+            message = f"Twitch authorized as {validation.login or 'your account'}. Token saved securely."
+        self._page.set_connection_status(True, message)
 
     async def _start_simulator(self) -> None:
         if self.chat_service is None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -10,6 +11,8 @@ from PySide6.QtCore import QObject
 from stream_control.core.credentials import CredentialStore
 from stream_control.core.models import AppConfig
 from stream_control.core.paths import AppPaths
+
+logger = logging.getLogger(__name__)
 
 
 class ServiceRegistry:
@@ -89,4 +92,21 @@ class PluginContext:
 
     def schedule(self, coro: Any) -> asyncio.Task[Any]:
         loop = asyncio.get_event_loop()
-        return loop.create_task(coro)
+        task = loop.create_task(coro)
+        task.add_done_callback(self._report_task_failure)
+        return task
+
+    @staticmethod
+    def _report_task_failure(task: asyncio.Task[Any]) -> None:
+        if task.cancelled():
+            return
+        try:
+            exception = task.exception()
+        except asyncio.CancelledError:
+            return
+        if exception is None:
+            return
+        logger.error(
+            "Scheduled plugin task failed.",
+            exc_info=(type(exception), exception, exception.__traceback__),
+        )

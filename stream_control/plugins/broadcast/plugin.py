@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import asdict, dataclass, field
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QUrl, Signal
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -23,6 +25,7 @@ from PySide6.QtWidgets import (
 from stream_control.core.credentials import BROADCAST_TWITCH_ACCESS_TOKEN
 from stream_control.plugins.base import AppPlugin, HotkeyAction, PluginPage
 from stream_control.plugins.context import PluginContext
+from stream_control.services.twitch_auth_service import TwitchAuthError, TwitchAuthService
 from stream_control.services.twitch_service import (
     TwitchApiError,
     TwitchCategory,
@@ -60,6 +63,9 @@ def default_broadcast_checklist() -> list[BroadcastChecklistItem]:
         BroadcastChecklistItem("Chat and alerts are visible"),
         BroadcastChecklistItem("Music and soundboard volume are safe"),
     ]
+
+
+BROADCAST_AUTH_SCOPES = ["channel:manage:broadcast"]
 
 
 @dataclass(slots=True)
@@ -151,6 +157,7 @@ class BroadcastPluginConfig:
 class BroadcastPage(QWidget):
     settings_changed = Signal()
     output_target_changed = Signal()
+    request_authorize_twitch = Signal()
     request_refresh_output_status = Signal()
     request_go_live = Signal()
     request_stop_streaming = Signal()
@@ -353,6 +360,13 @@ class BroadcastPage(QWidget):
         form.addRow("Broadcaster ID", self.broadcaster_id)
 
         card.layout.addLayout(form)
+
+        buttons = QHBoxLayout()
+        authorize_button = QPushButton("Authorize With Twitch", card)
+        authorize_button.clicked.connect(self._emit_authorize_twitch)
+        buttons.addWidget(authorize_button)
+        buttons.addStretch(1)
+        card.layout.addLayout(buttons)
 
         self.twitch_status = QLabel(card)
         self.twitch_status.setWordWrap(True)
@@ -652,6 +666,9 @@ class BroadcastPage(QWidget):
         self._settings.twitch.broadcaster_id = self.broadcaster_id.text().strip()
         self.settings_changed.emit()
 
+    def sync_twitch_credentials(self) -> None:
+        self._store_twitch_credentials()
+
     def _store_stream_info(self) -> None:
         self._settings.stream_title = self.stream_title.text().strip()
         self._settings.apply_info_before_going_live = self.auto_apply_before_live.isChecked()
@@ -798,6 +815,11 @@ class BroadcastPage(QWidget):
         self._store_all()
         self.request_go_live.emit()
 
+    def _emit_authorize_twitch(self) -> None:
+        self.sync_twitch_credentials()
+        self.set_twitch_status(True, "Opening Twitch sign-in...")
+        self.request_authorize_twitch.emit()
+
     @staticmethod
     def _muted_label(text: str, parent: QWidget) -> QLabel:
         label = QLabel(text, parent)
@@ -819,6 +841,8 @@ class BroadcastPlugin(AppPlugin):
         self.obs_service: ObsService | None = None
         self.streamlabs_service: StreamlabsService | None = None
         self.twitch_service: TwitchService | None = None
+        self.auth_service: TwitchAuthService | None = None
+        self._oauth_task: asyncio.Task[None] | None = None
         self._stream_status_cache: dict[str, dict[str, object]] = {}
         self._persist_twitch_access_token_in_config = False
 
@@ -829,10 +853,12 @@ class BroadcastPlugin(AppPlugin):
         self.obs_service = context.get_service("integrations.obs_service")
         self.streamlabs_service = context.get_service("integrations.streamlabs_service")
         self.twitch_service = TwitchService(context.qt_parent)
+        self.auth_service = TwitchAuthService()
 
         self._page = BroadcastPage(self._settings, context.qt_parent)
         self._page.settings_changed.connect(self._save_settings)
         self._page.output_target_changed.connect(self._sync_output_summary)
+        self._page.request_authorize_twitch.connect(lambda: self._schedule_twitch_authorization(context))
         self._page.request_refresh_output_status.connect(lambda: context.schedule(self._refresh_output_status()))
         self._page.request_go_live.connect(lambda: context.schedule(self._go_live()))
         self._page.request_stop_streaming.connect(lambda: context.schedule(self._stop_streaming()))
@@ -879,6 +905,14 @@ class BroadcastPlugin(AppPlugin):
         if self._context is not None:
             self._sync_output_summary()
             self._context.schedule(self._refresh_output_status())
+
+    def shutdown(self) -> None:
+        if self._oauth_task is not None and not self._oauth_task.done():
+            self._oauth_task.cancel()
+
+    async def shutdown_async(self) -> None:
+        if self._oauth_task is not None and not self._oauth_task.done():
+            self._oauth_task.cancel()
 
     def _bind_output_service(self, key: str, service: ObsService | StreamlabsService | None) -> None:
         if service is None:
@@ -1050,6 +1084,46 @@ class BroadcastPlugin(AppPlugin):
             True,
             "Current Twitch title and category loaded into Broadcast Control.",
         )
+
+    def _schedule_twitch_authorization(self, context: PluginContext) -> None:
+        if self._oauth_task is not None and not self._oauth_task.done():
+            if self._page is not None:
+                self._page.set_twitch_status(False, "Twitch authorization is already in progress.")
+            return
+        self._oauth_task = context.schedule(self._authorize_twitch())
+
+    async def _authorize_twitch(self) -> None:
+        if self._page is None or self.auth_service is None:
+            return
+        self._page.sync_twitch_credentials()
+        client_id = self._settings.twitch.client_id.strip()
+        if not client_id:
+            self._page.set_twitch_status(False, "Enter the Twitch client ID before authorizing.")
+            return
+
+        try:
+            authorization = await self.auth_service.start_device_authorization(client_id, BROADCAST_AUTH_SCOPES)
+            self._page.set_twitch_status(
+                True,
+                "Twitch sign-in opened in your browser. "
+                f"If it did not open, visit {authorization.verification_uri} and enter code {authorization.user_code}. "
+                "Waiting for approval...",
+            )
+            QDesktopServices.openUrl(QUrl(authorization.verification_uri))
+            token = await self.auth_service.poll_device_authorization(client_id, authorization)
+            validation = await self.auth_service.validate_access_token(token.access_token)
+        except TwitchAuthError as exc:
+            self._page.set_twitch_status(False, str(exc))
+            return
+
+        self._settings.twitch.access_token = token.access_token
+        if not self._settings.twitch.broadcaster_id.strip() and validation.user_id:
+            self._settings.twitch.broadcaster_id = validation.user_id
+        self._page.access_token.setText(token.access_token)
+        if self._settings.twitch.broadcaster_id.strip():
+            self._page.broadcaster_id.setText(self._settings.twitch.broadcaster_id)
+        self._save_settings()
+        self._page.set_twitch_status(True, f"Twitch authorized as {validation.login or 'your account'}. Token saved securely.")
 
     async def _apply_stream_info(self, mode: str) -> None:
         await self._publish_stream_info(mode, announce=True)
