@@ -55,6 +55,7 @@ OVERLAY_HTML = """<!doctype html>
     .text {
       display: grid;
       gap: 4px;
+      flex: 1 1 auto;
     }
     .eyebrow {
       text-transform: uppercase;
@@ -74,6 +75,31 @@ OVERLAY_HTML = """<!doctype html>
     .artist:empty {
       display: none;
     }
+    .meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+    }
+    .time {
+      font-size: 13px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .progress {
+      width: 100%;
+      height: 6px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: rgba(173, 192, 208, 0.18);
+    }
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--accent), #9bf6e2);
+      transition: width 0.2s linear;
+    }
     .stopped .pulse {
       background: #7e92a5;
       animation: none;
@@ -91,7 +117,13 @@ OVERLAY_HTML = """<!doctype html>
     <div class="text">
       <div class="eyebrow" id="status">Standby</div>
       <div class="title" id="title">No Music Playing</div>
-      <div class="artist" id="artist"></div>
+      <div class="meta">
+        <div class="artist" id="artist"></div>
+        <div class="time" id="time">0:00 / 0:00</div>
+      </div>
+      <div class="progress">
+        <div class="progress-fill" id="progress-fill"></div>
+      </div>
     </div>
   </div>
   <script>
@@ -99,6 +131,8 @@ OVERLAY_HTML = """<!doctype html>
     const statusNode = document.getElementById("status");
     const titleNode = document.getElementById("title");
     const artistNode = document.getElementById("artist");
+    const timeNode = document.getElementById("time");
+    const progressFillNode = document.getElementById("progress-fill");
 
     async function refresh() {
       try {
@@ -107,6 +141,8 @@ OVERLAY_HTML = """<!doctype html>
         statusNode.textContent = payload.status || "Standby";
         titleNode.textContent = payload.title || "No Music Playing";
         artistNode.textContent = payload.artist || "";
+        timeNode.textContent = `${payload.elapsed_label || "0:00"} / ${payload.duration_label || "0:00"}`;
+        progressFillNode.style.width = `${payload.progress_percent || 0}%`;
         card.classList.toggle("stopped", !payload.is_playing);
       } catch (error) {
         statusNode.textContent = "Offline";

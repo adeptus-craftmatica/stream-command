@@ -25,6 +25,45 @@ def test_music_service_overlay_uses_custom_idle_message_when_stopped() -> None:
     assert app is not None
 
 
+def test_music_service_can_hide_artist_from_overlay_and_playback_payload() -> None:
+    app = QApplication.instance() or QApplication([])
+    service = MusicService()
+    payloads: list[dict[str, object]] = []
+    service.playback_changed.connect(payloads.append)
+    service._current_track = TrackRecord(id="demo", path="demo.mp3", title="Test Track", artist="Tester")
+
+    service.set_show_artist(False)
+    overlay = service.overlay_state()
+
+    assert overlay["artist"] == ""
+    assert payloads[-1]["display_artist"] == ""
+    assert payloads[-1]["show_artist"] is False
+    assert app is not None
+
+
+def test_music_service_exposes_timing_metadata_in_payload_and_overlay(monkeypatch) -> None:
+    app = QApplication.instance() or QApplication([])
+    service = MusicService()
+    payloads: list[dict[str, object]] = []
+    track = TrackRecord(id="demo", path="demo.mp3", title="Test Track", artist="Tester")
+    service.playback_changed.connect(payloads.append)
+    service._current_track = track
+    monkeypatch.setattr(service, "_position_ms", lambda: 43_000)
+    monkeypatch.setattr(service, "_duration_ms", lambda: 207_000)
+    monkeypatch.setattr(service, "_status_label", lambda: "Playing")
+
+    service._emit_playback_state()
+    overlay = service.overlay_state()
+
+    assert payloads[-1]["elapsed_label"] == "0:43"
+    assert payloads[-1]["duration_label"] == "3:27"
+    assert payloads[-1]["progress_percent"] == 20.77
+    assert overlay["elapsed_label"] == "0:43"
+    assert overlay["duration_label"] == "3:27"
+    assert overlay["progress_percent"] == 20.77
+    assert app is not None
+
+
 def test_music_service_queues_multiple_tracks_and_reports_transition_settings() -> None:
     app = QApplication.instance() or QApplication([])
     service = MusicService()
@@ -195,6 +234,7 @@ def test_music_plugin_config_round_trip_preserves_playlists_and_transitions() ->
         repeat_mode="all",
         playback_order="shuffle",
         output_device_id="BlackHole2ch",
+        show_artist=False,
     )
 
     rebuilt = MusicPluginConfig.from_dict(config.to_dict())
@@ -207,6 +247,7 @@ def test_music_plugin_config_round_trip_preserves_playlists_and_transitions() ->
     assert rebuilt.repeat_mode == "all"
     assert rebuilt.playback_order == "shuffle"
     assert rebuilt.output_device_id == "BlackHole2ch"
+    assert rebuilt.show_artist is False
 
 
 def test_music_page_can_queue_selected_playlist(monkeypatch) -> None:
@@ -322,4 +363,36 @@ def test_music_page_applies_selected_output_device(monkeypatch) -> None:
 
     assert captured[-1] == "BlackHole2ch"
     assert settings.output_device_id == "BlackHole2ch"
+    assert app is not None
+
+
+def test_music_page_updates_now_playing_without_artist_when_hidden() -> None:
+    app = QApplication.instance() or QApplication([])
+    settings = MusicPluginConfig(show_artist=False)
+    service = MusicService()
+    page = MusicPage(settings, service)
+    track = TrackRecord(id="track-1", path="/tmp/one.mp3", title="One", artist="Artist")
+
+    page._update_playback({"current_track": track, "display_artist": "", "status": "Playing"})
+
+    assert page.now_playing.text() == "Now playing: One (Playing)"
+    assert app is not None
+
+
+def test_music_page_scrub_release_seeks_player(monkeypatch) -> None:
+    app = QApplication.instance() or QApplication([])
+    settings = MusicPluginConfig()
+    service = MusicService()
+    requested: list[int] = []
+    monkeypatch.setattr(service, "seek", lambda position_ms: requested.append(position_ms))
+
+    page = MusicPage(settings, service)
+    page.progress_slider.setEnabled(True)
+    page.progress_slider.setRange(0, 240_000)
+    page.progress_slider.setValue(61_000)
+    page._start_scrub()
+    page._apply_scrub()
+
+    assert requested == [61_000]
+    assert page._is_scrubbing is False
     assert app is not None

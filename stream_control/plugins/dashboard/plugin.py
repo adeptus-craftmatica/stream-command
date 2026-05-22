@@ -110,7 +110,8 @@ class DashboardPage(QWidget):
         self.hotkey_metric.set_detail(message)
 
     def set_now_playing(self, title: str, artist: str, status: str) -> None:
-        self.now_playing.setText(f"Now playing: {title} - {artist} ({status})")
+        detail = title if not artist else f"{title} - {artist}"
+        self.now_playing.setText(f"Now playing: {detail} ({status})")
 
 
 class DashboardPlugin(AppPlugin):
@@ -176,4 +177,4 @@ class DashboardPlugin(AppPlugin):
         if track is None:
             self._page.set_now_playing("No track selected", "Stream Control", payload["status"])
             return
-        self._page.set_now_playing(track.title, track.artist, payload["status"])
+        self._page.set_now_playing(track.title, str(payload.get("display_artist", "")), payload["status"])

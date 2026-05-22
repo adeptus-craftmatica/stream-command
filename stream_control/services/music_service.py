@@ -21,6 +21,15 @@ SUPPORTED_AUDIO_EXTENSIONS = {
 }
 
 
+def _format_playback_time(milliseconds: int) -> str:
+    total_seconds = max(0, int(milliseconds) // 1000)
+    minutes, seconds = divmod(total_seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours > 0:
+        return f"{hours}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes}:{seconds:02d}"
+
+
 class MusicService(QObject):
     library_changed = Signal(object)
     queue_changed = Signal(object)
@@ -34,12 +43,15 @@ class MusicService(QObject):
         self._player.setAudioOutput(self._audio_output)
         self._player.mediaStatusChanged.connect(self._on_media_status_changed)
         self._player.playbackStateChanged.connect(lambda *_: self._emit_playback_state())
+        self._player.positionChanged.connect(lambda *_: self._emit_playback_state())
+        self._player.durationChanged.connect(lambda *_: self._emit_playback_state())
         self._player.errorOccurred.connect(lambda *_: self._emit_error())
 
         self._library: list[TrackRecord] = []
         self._queue: list[TrackRecord] = []
         self._current_track: TrackRecord | None = None
         self._overlay_idle_message = "No Music Playing"
+        self._show_artist = True
         self._target_volume = 75
         self._transition_mode = "none"
         self._transition_duration_ms = 900
@@ -166,6 +178,21 @@ class MusicService(QObject):
         self._overlay_idle_message = cleaned or "No Music Playing"
         self._emit_playback_state()
 
+    def set_show_artist(self, show_artist: bool) -> None:
+        self._show_artist = bool(show_artist)
+        self._emit_playback_state()
+
+    def seek(self, position_ms: int) -> None:
+        if self._current_track is None and self._player.source().isEmpty():
+            self.status_message.emit("Start playback before seeking.")
+            return
+        duration_ms = self._duration_ms()
+        target = max(0, int(position_ms))
+        if duration_ms > 0:
+            target = min(target, duration_ms)
+        self._player.setPosition(target)
+        self._emit_playback_state()
+
     def play_track(self, track: TrackRecord) -> None:
         self._set_context_for_track(track)
         self._play_track_with_transition(track, allow_fade_out=True)
@@ -269,19 +296,32 @@ class MusicService(QObject):
     def overlay_state(self) -> dict[str, object]:
         status = self._status_label()
         track = self._current_track
+        position_ms = self._position_ms()
+        duration_ms = self._duration_ms()
+        progress_percent = 0 if duration_ms <= 0 else round((position_ms / duration_ms) * 100, 2)
         if track is None or status == "Stopped":
             return {
                 "is_playing": False,
                 "status": status,
                 "title": self._overlay_idle_message,
                 "artist": "",
+                "position_ms": 0,
+                "duration_ms": 0,
+                "elapsed_label": _format_playback_time(0),
+                "duration_label": _format_playback_time(0),
+                "progress_percent": 0,
                 "queue_length": len(self._queue),
             }
         return {
             "is_playing": status == "Playing",
             "status": status,
             "title": track.title,
-            "artist": track.artist,
+            "artist": track.artist if self._show_artist else "",
+            "position_ms": position_ms,
+            "duration_ms": duration_ms,
+            "elapsed_label": _format_playback_time(position_ms),
+            "duration_label": _format_playback_time(duration_ms),
+            "progress_percent": progress_percent,
             "queue_length": len(self._queue),
         }
 
@@ -343,10 +383,20 @@ class MusicService(QObject):
 
     def _emit_playback_state(self) -> None:
         track = self._current_track
+        position_ms = self._position_ms()
+        duration_ms = self._duration_ms()
+        progress_percent = 0 if duration_ms <= 0 else round((position_ms / duration_ms) * 100, 2)
         self.playback_changed.emit(
             {
                 "status": self._status_label(),
                 "current_track": track,
+                "display_artist": track.artist if track is not None and self._show_artist else "",
+                "show_artist": self._show_artist,
+                "position_ms": position_ms,
+                "duration_ms": duration_ms,
+                "elapsed_label": _format_playback_time(position_ms),
+                "duration_label": _format_playback_time(duration_ms),
+                "progress_percent": progress_percent,
                 "queue_length": len(self._queue),
                 "volume": round(self._audio_output.volume() * 100),
                 "target_volume": self._target_volume,
@@ -357,6 +407,12 @@ class MusicService(QObject):
                 "output_device_id": self._output_device_id,
             }
         )
+
+    def _position_ms(self) -> int:
+        return max(0, int(self._player.position()))
+
+    def _duration_ms(self) -> int:
+        return max(0, int(self._player.duration()))
 
     def _set_context_for_track(self, track: TrackRecord) -> None:
         library_index = self._track_index_in(self._library, track)

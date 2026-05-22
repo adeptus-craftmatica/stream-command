@@ -6,6 +6,7 @@ from pathlib import Path
 from PySide6.QtCore import QSignalBlocker, Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QHeaderView,
@@ -52,6 +53,7 @@ class MusicPluginConfig:
     music_library: list[TrackRecord] = field(default_factory=list)
     music_volume: int = 75
     overlay_idle_message: str = "No Music Playing"
+    show_artist: bool = True
     playlists: list[MusicPlaylist] = field(default_factory=list)
     selected_playlist_name: str = ""
     transition_mode: str = "none"
@@ -68,6 +70,7 @@ class MusicPluginConfig:
             "music_library": [asdict(track) for track in self.music_library],
             "music_volume": self.music_volume,
             "overlay_idle_message": self.overlay_idle_message,
+            "show_artist": self.show_artist,
             "playlists": [asdict(playlist) for playlist in self.playlists],
             "selected_playlist_name": self.selected_playlist_name,
             "transition_mode": self.transition_mode,
@@ -86,6 +89,7 @@ class MusicPluginConfig:
             music_library=[TrackRecord(**item) for item in raw.get("music_library", [])],
             music_volume=int(raw.get("music_volume", 75)),
             overlay_idle_message=str(raw.get("overlay_idle_message", "No Music Playing")),
+            show_artist=bool(raw.get("show_artist", True)),
             playlists=[MusicPlaylist(**item) for item in raw.get("playlists", []) if isinstance(item, dict)],
             selected_playlist_name=str(raw.get("selected_playlist_name", "")),
             transition_mode=str(raw.get("transition_mode", "none") or "none"),
@@ -132,6 +136,7 @@ class MusicPage(QWidget):
         self._library_tracks: list[TrackRecord] = list(settings.music_library)
         self._queue_tracks: list[TrackRecord] = []
         self._playlist_track_ids: list[str] = []
+        self._is_scrubbing = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -161,6 +166,10 @@ class MusicPage(QWidget):
         self.overlay_idle_message.setPlaceholderText("No Music Playing")
         self.overlay_idle_message.editingFinished.connect(self._store_overlay_idle_message)
         overlay_card.layout.addWidget(self.overlay_idle_message)
+        self.show_artist = QCheckBox("Show artist in now playing", overlay_card)
+        self.show_artist.setChecked(self._settings.show_artist)
+        self.show_artist.toggled.connect(self._store_show_artist)
+        overlay_card.layout.addWidget(self.show_artist)
 
         controls_card = PanelCard("Playback Controls", self)
         controls_row = QHBoxLayout()
@@ -189,6 +198,18 @@ class MusicPage(QWidget):
         self.now_playing = QLabel("Now playing: No track selected", controls_card)
         self.now_playing.setWordWrap(True)
         controls_card.layout.addWidget(self.now_playing)
+
+        self.playback_position = QLabel("0:00 / 0:00", controls_card)
+        self.playback_position.setObjectName("mutedText")
+        controls_card.layout.addWidget(self.playback_position)
+
+        self.progress_slider = QSlider(Qt.Orientation.Horizontal, controls_card)
+        self.progress_slider.setRange(0, 0)
+        self.progress_slider.setEnabled(False)
+        self.progress_slider.sliderPressed.connect(self._start_scrub)
+        self.progress_slider.sliderMoved.connect(self._preview_scrub)
+        self.progress_slider.sliderReleased.connect(self._apply_scrub)
+        controls_card.layout.addWidget(self.progress_slider)
 
         volume_row = QHBoxLayout()
         volume_row.addWidget(QLabel("Music volume", controls_card))
@@ -357,11 +378,26 @@ class MusicPage(QWidget):
 
     def _update_playback(self, payload: dict[str, object]) -> None:
         track = payload.get("current_track")
+        position_ms = int(payload.get("position_ms", 0) or 0)
+        duration_ms = int(payload.get("duration_ms", 0) or 0)
+        self.progress_slider.setEnabled(track is not None and duration_ms > 0)
+        if not self._is_scrubbing:
+            blocker = QSignalBlocker(self.progress_slider)
+            self.progress_slider.setRange(0, max(duration_ms, 0))
+            self.progress_slider.setValue(min(position_ms, max(duration_ms, 0)))
+            del blocker
+            self.playback_position.setText(
+                f"{payload.get('elapsed_label', '0:00')} / {payload.get('duration_label', '0:00')}"
+            )
         if track is None:
             idle_message = self._settings.overlay_idle_message.strip() or "No Music Playing"
             self.now_playing.setText(f"Now playing: {idle_message} ({payload['status']})")
+            if not self._is_scrubbing:
+                self.playback_position.setText("0:00 / 0:00")
             return
-        self.now_playing.setText(f"Now playing: {track.title} - {track.artist} ({payload['status']})")
+        artist = str(payload.get("display_artist", ""))
+        detail = track.title if not artist else f"{track.title} - {artist}"
+        self.now_playing.setText(f"Now playing: {detail} ({payload['status']})")
 
     def _set_message(self, message: str) -> None:
         self.message_label.setText(message)
@@ -414,6 +450,32 @@ class MusicPage(QWidget):
         self.overlay_idle_message.setText(self._settings.overlay_idle_message)
         self._music_service.set_overlay_idle_message(self._settings.overlay_idle_message)
         self.settings_changed.emit()
+
+    def _store_show_artist(self, checked: bool) -> None:
+        self._settings.show_artist = bool(checked)
+        self._music_service.set_show_artist(self._settings.show_artist)
+        self.settings_changed.emit()
+
+    def _start_scrub(self) -> None:
+        self._is_scrubbing = True
+
+    def _preview_scrub(self, value: int) -> None:
+        duration_ms = max(self.progress_slider.maximum(), 0)
+        self.playback_position.setText(f"{self._format_time(value)} / {self._format_time(duration_ms)}")
+
+    def _apply_scrub(self) -> None:
+        target = self.progress_slider.value()
+        self._is_scrubbing = False
+        self._music_service.seek(target)
+
+    @staticmethod
+    def _format_time(milliseconds: int) -> str:
+        total_seconds = max(0, int(milliseconds) // 1000)
+        minutes, seconds = divmod(total_seconds, 60)
+        hours, minutes = divmod(minutes, 60)
+        if hours > 0:
+            return f"{hours}:{minutes:02d}:{seconds:02d}"
+        return f"{minutes}:{seconds:02d}"
 
     def _store_library_layout(self, *_args: object) -> None:
         self._settings.library_column_widths = capture_table_column_widths(self.library_table)
@@ -792,6 +854,7 @@ class MusicPlugin(AppPlugin):
         self.music_service.set_playback_order(self._settings.playback_order)
         self.music_service.set_output_device(self._settings.output_device_id)
         self.music_service.set_overlay_idle_message(self._settings.overlay_idle_message)
+        self.music_service.set_show_artist(self._settings.show_artist)
         self.overlay_server = OverlayServer(self._settings.overlay, self.music_service.overlay_state)
 
         self._page = MusicPage(self._settings, self.music_service, context.qt_parent)
