@@ -1,39 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="c15f1be3-dc97-4510-8178-6a294f5f3fc5" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/modules.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
+    <list default="true" id="c15f1be3-dc97-4510-8178-6a294f5f3fc5" name="Changes" comment="After code review">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/pyproject.toml" beforeDir="false" afterPath="$PROJECT_DIR$/pyproject.toml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/stream_control/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/app.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/stream_control/core/config.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/core/config.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/stream_control/core/models.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/core/models.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/stream_control/plugins/base.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/plugins/base.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/stream_control/plugins/broadcast/plugin.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/plugins/broadcast/plugin.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/stream_control/plugins/builtin.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/plugins/builtin.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/stream_control/plugins/chat/plugin.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/plugins/chat/plugin.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/stream_control/plugins/context.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/plugins/context.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/stream_control/plugins/dashboard/plugin.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/plugins/dashboard/plugin.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/stream_control/plugins/host.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/plugins/host.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/stream_control/plugins/integrations/plugin.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/plugins/integrations/plugin.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/stream_control/plugins/music/plugin.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/plugins/music/plugin.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/stream_control/plugins/obs_production/plugin.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/plugins/obs_production/plugin.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/stream_control/plugins/setup/plugin.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/plugins/setup/plugin.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/stream_control/services/hotkey_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/services/hotkey_service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/stream_control/services/obs_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/services/obs_service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/stream_control/services/overlay_server.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/services/overlay_server.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/stream_control/services/setup_diagnostics_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/services/setup_diagnostics_service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/stream_control/ui/main_window.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/ui/main_window.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/stream_control/ui/theme.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/ui/theme.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/stream_control/ui/widgets/common.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/ui/widgets/common.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_broadcast_plugin.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_broadcast_plugin.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_hotkey_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_hotkey_service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_plugin_host.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_plugin_host.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_setup_diagnostics_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_setup_diagnostics_service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_simulated_integrations.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_simulated_integrations.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -120,6 +89,19 @@
       <option name="presentableId" value="Default" />
       <updated>1779225511357</updated>
     </task>
+    <task id="LOCAL-00001" summary="After code review">
+      <option name="closed" value="true" />
+      <created>1779286895259</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1779286895259</updated>
+    </task>
+    <option name="localTasksCounter" value="2" />
     <servers />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="After code review" />
+    <option name="LAST_COMMIT_MESSAGE" value="After code review" />
   </component>
 </project>
