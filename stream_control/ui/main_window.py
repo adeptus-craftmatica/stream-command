@@ -3,6 +3,9 @@ from __future__ import annotations
 from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtGui import QCloseEvent, QGuiApplication
 from PySide6.QtWidgets import (
+    QAbstractSpinBox,
+    QApplication,
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -10,10 +13,12 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QPlainTextEdit,
     QScrollArea,
     QSizePolicy,
     QSplitter,
     QStackedWidget,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -23,6 +28,7 @@ from stream_control.core.config import ConfigStore
 from stream_control.core.credentials import CredentialStore
 from stream_control.core.models import AppConfig
 from stream_control.core.paths import AppPaths
+from stream_control.core.platform import is_macos
 from stream_control.plugins.builtin import build_builtin_plugins
 from stream_control.plugins.context import PluginContext
 from stream_control.plugins.host import PluginHost
@@ -36,6 +42,7 @@ class MainWindow(QMainWindow):
         self._app_paths = app_paths
         self.config: AppConfig = config_store.load()
         self._did_shutdown = False
+        self._hotkeys_paused_for_text_entry = False
 
         self.setWindowTitle("Stream Control")
         self.setMinimumSize(1120, 760)
@@ -51,6 +58,8 @@ class MainWindow(QMainWindow):
         )
         self.plugin_host = PluginHost(self.plugin_context, build_builtin_plugins())
         self.plugin_host.activate_plugins()
+        self._install_hotkey_focus_guard()
+        self._install_hotkey_activity_guard()
         self._populate_navigation()
         self._restore_window_state()
         self._save_config()
@@ -142,6 +151,68 @@ class MainWindow(QMainWindow):
     def _change_page(self, index: int) -> None:
         if index >= 0:
             self.stack.setCurrentIndex(index)
+
+    def _install_hotkey_focus_guard(self) -> None:
+        if not is_macos():
+            return
+        hotkey_service = self.plugin_context.get_service("hotkeys.service")
+        if hotkey_service is None or not hotkey_service.runtime_hotkeys_supported():
+            return
+        app = QApplication.instance()
+        if app is None:
+            return
+        app.focusChanged.connect(self._handle_focus_change)
+
+    def _install_hotkey_activity_guard(self) -> None:
+        if not is_macos():
+            return
+        hotkey_service = self.plugin_context.get_service("hotkeys.service")
+        if hotkey_service is None or not hotkey_service.runtime_hotkeys_supported():
+            return
+        app = QApplication.instance()
+        if app is None:
+            return
+        app.applicationStateChanged.connect(self._handle_application_state_change)
+        self._handle_application_state_change(app.applicationState())
+
+    def _handle_application_state_change(self, state: Qt.ApplicationState) -> None:
+        if not is_macos():
+            return
+        hotkey_service = self.plugin_context.get_service("hotkeys.service")
+        if hotkey_service is None:
+            return
+        if state == Qt.ApplicationState.ApplicationActive:
+            hotkey_service.suspend("foreground_app")
+            return
+        hotkey_service.resume("foreground_app")
+
+    def _handle_focus_change(self, _old: QWidget | None, now: QWidget | None) -> None:
+        if not is_macos():
+            return
+        hotkey_service = self.plugin_context.get_service("hotkeys.service")
+        if hotkey_service is None:
+            return
+        should_pause = self._should_pause_hotkeys_for_widget(now)
+        if should_pause and not self._hotkeys_paused_for_text_entry:
+            hotkey_service.suspend("text_entry")
+            self._hotkeys_paused_for_text_entry = True
+            return
+        if not should_pause and self._hotkeys_paused_for_text_entry:
+            hotkey_service.resume("text_entry")
+            self._hotkeys_paused_for_text_entry = False
+
+    def _should_pause_hotkeys_for_widget(self, widget: QWidget | None) -> bool:
+        if widget is None or widget.window() is not self:
+            return False
+        if isinstance(widget, QLineEdit):
+            return not widget.isReadOnly()
+        if isinstance(widget, (QPlainTextEdit, QTextEdit)):
+            return not widget.isReadOnly()
+        if isinstance(widget, QComboBox):
+            return widget.isEditable()
+        if isinstance(widget, QAbstractSpinBox):
+            return not widget.isReadOnly()
+        return False
 
     def _save_config(self) -> None:
         self._config_store.save(self.config)

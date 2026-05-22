@@ -5,6 +5,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QComboBox,
     QFileDialog,
     QGridLayout,
     QHBoxLayout,
@@ -17,6 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from stream_control.core.audio import SYSTEM_DEFAULT_AUDIO_OUTPUT_ID, list_audio_output_options
 from stream_control.core.models import (
     SoundboardBank,
     SoundboardPad,
@@ -35,12 +37,14 @@ class SoundboardPluginConfig:
     banks: list[SoundboardBank] = field(default_factory=lambda: [default_soundboard_bank()])
     selected_bank_id: str = "main"
     volume: int = 85
+    output_device_id: str = SYSTEM_DEFAULT_AUDIO_OUTPUT_ID
 
     def to_dict(self) -> dict[str, object]:
         return {
             "banks": [asdict(bank) for bank in self.banks],
             "selected_bank_id": self.selected_bank_id,
             "volume": self.volume,
+            "output_device_id": self.output_device_id,
         }
 
     @classmethod
@@ -68,6 +72,7 @@ class SoundboardPluginConfig:
             banks=banks,
             selected_bank_id=selected_bank_id,
             volume=int(raw.get("volume", 85)),
+            output_device_id=str(raw.get("output_device_id", SYSTEM_DEFAULT_AUDIO_OUTPUT_ID) or SYSTEM_DEFAULT_AUDIO_OUTPUT_ID),
         )
 
     @staticmethod
@@ -131,6 +136,16 @@ class SoundboardPage(QWidget):
         volume_row.addWidget(slider)
         controls.layout.addLayout(volume_row)
 
+        output_row = QHBoxLayout()
+        output_row.addWidget(QLabel("Audio output", controls))
+        self.output_device = QComboBox(controls)
+        self.output_device.currentIndexChanged.connect(self._set_output_device)
+        output_row.addWidget(self.output_device, 1)
+        refresh_outputs = QPushButton("Refresh Outputs", controls)
+        refresh_outputs.clicked.connect(self._populate_output_devices)
+        output_row.addWidget(refresh_outputs)
+        controls.layout.addLayout(output_row)
+
         bank_row = QHBoxLayout()
         bank_row.addWidget(QLabel("Current bank", controls))
         self.bank_name = QLineEdit(controls)
@@ -159,6 +174,7 @@ class SoundboardPage(QWidget):
         layout.addWidget(pads_card, 1)
 
         self._soundboard_service.status_message.connect(self.message_label.setText)
+        self._populate_output_devices()
         self._render_banks()
 
     def _render_banks(self) -> None:
@@ -309,6 +325,24 @@ class SoundboardPage(QWidget):
         self._soundboard_service.set_volume(value)
         self.settings_changed.emit()
 
+    def _populate_output_devices(self) -> None:
+        current_device_id = self._settings.output_device_id
+        self.output_device.blockSignals(True)
+        self.output_device.clear()
+        for option in list_audio_output_options():
+            self.output_device.addItem(option.label, option.device_id)
+        selected_index = self.output_device.findData(current_device_id)
+        if selected_index < 0:
+            selected_index = 0
+        self.output_device.setCurrentIndex(selected_index)
+        self.output_device.blockSignals(False)
+        self._set_output_device()
+
+    def _set_output_device(self, *_args: object) -> None:
+        self._settings.output_device_id = str(self.output_device.currentData() or SYSTEM_DEFAULT_AUDIO_OUTPUT_ID)
+        self._soundboard_service.set_output_device(self._settings.output_device_id)
+        self.settings_changed.emit()
+
 
 class SoundboardPlugin(AppPlugin):
     plugin_id = "soundboard"
@@ -329,6 +363,7 @@ class SoundboardPlugin(AppPlugin):
         self.soundboard_service = SoundboardService(context.qt_parent)
         self.soundboard_service.set_pads(self._all_pads())
         self.soundboard_service.set_volume(self._settings.volume)
+        self.soundboard_service.set_output_device(self._settings.output_device_id)
 
         self._page = SoundboardPage(self._settings, self.soundboard_service, context.qt_parent)
         self._page.settings_changed.connect(self._handle_settings_changed)
@@ -371,6 +406,7 @@ class SoundboardPlugin(AppPlugin):
         if self.soundboard_service is not None:
             self.soundboard_service.set_pads(self._all_pads())
             self.soundboard_service.set_volume(self._settings.volume)
+            self.soundboard_service.set_output_device(self._settings.output_device_id)
         self._save_settings()
         hotkeys_plugin = self._context.get_plugin("hotkeys") if self._context is not None else None
         if hotkeys_plugin is not None:

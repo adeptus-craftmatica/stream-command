@@ -3,9 +3,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, Qt, Signal
+from PySide6.QtWidgets import QApplication
 
-from stream_control.core.platform import macos_hotkey_permissions
+from stream_control.core.platform import is_macos, macos_hotkey_permissions
 
 try:
     from pynput.keyboard import GlobalHotKeys
@@ -35,6 +36,8 @@ class HotkeyService(QObject):
         super().__init__(parent)
         self._listener: GlobalHotKeys | None = None
         self._action_handlers: dict[str, Callable[[], None]] = {}
+        self._bindings: list[HotkeyBinding] = []
+        self._suspend_reasons: set[str] = set()
         self._last_status = "Waiting for global hotkeys."
         self.hotkey_triggered.connect(self._dispatch_action)
 
@@ -82,7 +85,16 @@ class HotkeyService(QObject):
         )
 
     def apply_bindings(self, bindings: list[HotkeyBinding]) -> None:
+        self._bindings = list(bindings)
         self.stop()
+        if not self.runtime_hotkeys_supported():
+            self._set_status(self._disabled_status_message())
+            return
+        if self._should_pause_for_active_app():
+            self._suspend_reasons.add("foreground_app")
+        if self._suspend_reasons:
+            self._set_status(self._suspended_status_message())
+            return
         report = self.build_report(bindings)
 
         if not report.mapping:
@@ -131,6 +143,28 @@ class HotkeyService(QObject):
             self._listener.stop()
             self._listener = None
 
+    def suspend(self, reason: str = "manual") -> None:
+        if not self.runtime_hotkeys_supported():
+            self._set_status(self._disabled_status_message())
+            return
+        if reason in self._suspend_reasons:
+            return
+        self._suspend_reasons.add(reason)
+        self.stop()
+        self._set_status(self._suspended_status_message())
+
+    def resume(self, reason: str = "manual") -> None:
+        if not self.runtime_hotkeys_supported():
+            self._set_status(self._disabled_status_message())
+            return
+        if reason not in self._suspend_reasons:
+            return
+        self._suspend_reasons.remove(reason)
+        if self._suspend_reasons:
+            self._set_status(self._suspended_status_message())
+            return
+        self.apply_bindings(self._bindings)
+
     def _dispatch_action(self, action_id: str) -> None:
         handler = self._action_handlers.get(action_id)
         if handler is None:
@@ -143,3 +177,29 @@ class HotkeyService(QObject):
     def _set_status(self, message: str) -> None:
         self._last_status = message
         self.status_changed.emit(message)
+
+    def _suspended_status_message(self) -> str:
+        if not self.runtime_hotkeys_supported():
+            return self._disabled_status_message()
+        if "foreground_app" in self._suspend_reasons:
+            return "Global hotkeys are paused while Stream Control is the active app on macOS."
+        if "text_entry" in self._suspend_reasons:
+            return "Global hotkeys are paused while typing in the app."
+        return "Global hotkeys are temporarily paused."
+
+    @staticmethod
+    def runtime_hotkeys_supported() -> bool:
+        return not is_macos()
+
+    @staticmethod
+    def _disabled_status_message() -> str:
+        return "Global hotkeys are temporarily disabled on macOS while we work around a crash in the current hotkey backend."
+
+    @staticmethod
+    def _should_pause_for_active_app() -> bool:
+        if not is_macos():
+            return False
+        app = QApplication.instance()
+        if app is None:
+            return False
+        return app.applicationState() == Qt.ApplicationState.ApplicationActive

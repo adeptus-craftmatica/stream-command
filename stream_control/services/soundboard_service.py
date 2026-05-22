@@ -5,6 +5,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QUrl, Signal
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 
+from stream_control.core.audio import SYSTEM_DEFAULT_AUDIO_OUTPUT_ID, resolve_audio_output
 from stream_control.core.models import SoundboardPad
 
 
@@ -16,6 +17,7 @@ class SoundboardService(QObject):
         super().__init__(parent)
         self._pads: list[SoundboardPad] = []
         self._volume = 85
+        self._output_device_id = SYSTEM_DEFAULT_AUDIO_OUTPUT_ID
         self._active_players: list[tuple[QMediaPlayer, QAudioOutput]] = []
 
     def set_pads(self, pads: list[SoundboardPad]) -> None:
@@ -27,6 +29,12 @@ class SoundboardService(QObject):
 
     def set_volume(self, volume: int) -> None:
         self._volume = max(0, min(volume, 100))
+
+    def set_output_device(self, device_id: str) -> None:
+        self._output_device_id = device_id.strip()
+        device = resolve_audio_output(self._output_device_id)
+        for _player, audio_output in self._active_players:
+            audio_output.setDevice(device)
 
     def assign_clip(self, pad_id: str, file_path: str) -> None:
         for pad in self._pads:
@@ -64,6 +72,7 @@ class SoundboardService(QObject):
 
         player = QMediaPlayer(self)
         audio_output = QAudioOutput(self)
+        audio_output.setDevice(resolve_audio_output(self._output_device_id))
         audio_output.setVolume(self._volume / 100)
         player.setAudioOutput(audio_output)
         player.setSource(QUrl.fromLocalFile(str(clip_path)))

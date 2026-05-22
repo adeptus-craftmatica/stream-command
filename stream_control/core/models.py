@@ -4,11 +4,15 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 
 def _new_id() -> str:
     return uuid4().hex
+
+
+def _stable_track_id(path: Path) -> str:
+    return uuid5(NAMESPACE_URL, str(path.resolve())).hex
 
 
 def _dict_or_default(value: Any, default: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -33,7 +37,12 @@ class TrackRecord:
     @classmethod
     def from_path(cls, path: Path) -> "TrackRecord":
         title = path.stem.replace("_", " ").replace("-", " ").strip()
-        return cls(path=str(path), title=title or path.stem, artist="Local Library")
+        return cls(
+            id=_stable_track_id(path),
+            path=str(path),
+            title=title or path.stem,
+            artist="Local Library",
+        )
 
 
 @dataclass(slots=True)
