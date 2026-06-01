@@ -1,5 +1,5 @@
 from PySide6.QtCore import QItemSelectionModel
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QLineEdit, QStyleOptionViewItem
 
 from stream_control.core.audio import AudioOutputOption
 from stream_control.core.models import TrackRecord
@@ -339,6 +339,46 @@ def test_music_page_can_save_queue_as_playlist(monkeypatch) -> None:
     assert page._playlist_track_ids == ["track-1", "track-2"]
     assert page.music_tabs.currentIndex() == 1
     assert "Saved current queue as playlist 'Queue Capture'." in page.message_label.text()
+    assert app is not None
+
+
+def test_music_page_uses_compact_inline_rename_editor() -> None:
+    app = QApplication.instance() or QApplication([])
+    tracks = [TrackRecord(id="track-1", path="/tmp/one.mp3", title="One", artist="Artist")]
+    page = MusicPage(MusicPluginConfig(music_library=tracks), MusicService())
+    delegate = page.library_table.itemDelegate()
+    index = page.library_table.model().index(0, 0)
+
+    editor = delegate.createEditor(page.library_table, QStyleOptionViewItem(), index)
+
+    assert isinstance(editor, QLineEdit)
+    assert editor.objectName() == "inlineItemEditor"
+    assert page.library_table.verticalHeader().defaultSectionSize() >= 36
+    assert app is not None
+
+
+def test_music_page_library_rename_updates_track_metadata_and_dependents() -> None:
+    app = QApplication.instance() or QApplication([])
+    track = TrackRecord(id="track-1", path="/tmp/one.mp3", title="One", artist="Artist")
+    settings = MusicPluginConfig(music_library=[track])
+    service = MusicService()
+    refresh_calls: list[str] = []
+    service.refresh_playback_state = lambda: refresh_calls.append("refresh")  # type: ignore[method-assign]
+    page = MusicPage(settings, service)
+    page._render_queue([track])
+    page._playlist_track_ids = [track.id]
+    page._render_playlist_tracks()
+
+    title_item = page.library_table.item(0, 0)
+    assert title_item is not None
+
+    title_item.setText("Renamed Track")
+
+    assert track.title == "Renamed Track"
+    assert settings.music_library[0].title == "Renamed Track"
+    assert page.queue_list.item(0).text() == "Renamed Track - Artist"
+    assert page.playlist_tracks.item(0).text() == "Renamed Track - Artist"
+    assert refresh_calls == ["refresh"]
     assert app is not None
 
 

@@ -182,6 +182,9 @@ class MusicService(QObject):
         self._show_artist = bool(show_artist)
         self._emit_playback_state()
 
+    def refresh_playback_state(self) -> None:
+        self._emit_playback_state()
+
     def seek(self, position_ms: int) -> None:
         if self._current_track is None and self._player.source().isEmpty():
             self.status_message.emit("Start playback before seeking.")

@@ -1,17 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="c15f1be3-dc97-4510-8178-6a294f5f3fc5" name="Changes" comment="After code review">
+    <list default="true" id="c15f1be3-dc97-4510-8178-6a294f5f3fc5" name="Changes" comment="playlist improvements, audio selection, and other qol adjustments">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/stream_control/core/models.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/core/models.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/stream_control/plugins/music/plugin.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/plugins/music/plugin.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/stream_control/plugins/soundboard/plugin.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/plugins/soundboard/plugin.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/stream_control/services/hotkey_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/services/hotkey_service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/stream_control/services/music_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/services/music_service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/stream_control/services/soundboard_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/services/soundboard_service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/stream_control/ui/main_window.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream_control/ui/main_window.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_hotkey_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_hotkey_service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_music_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_music_service.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -48,7 +39,10 @@
     &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
+    &quot;codeWithMe.voiceChat.enabledByDefault&quot;: &quot;false&quot;,
     &quot;git-widget-placeholder&quot;: &quot;master&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
     &quot;settings.editor.selected.configurable&quot;: &quot;com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable&quot;
   }
 }</component>
@@ -67,6 +61,7 @@
       <option name="IS_MODULE_SDK" value="false" />
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="DEBUG_JUST_MY_CODE" value="true" />
       <option name="RUN_TOOL" value="" />
       <option name="SCRIPT_NAME" value="$PROJECT_DIR$/main.py" />
       <option name="PARAMETERS" value="" />
@@ -86,7 +81,7 @@
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
-        <option value="bundled-python-sdk-1aa8deef9a7b-6d6dccd035ac-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-253.32098.104" />
+        <option value="bundled-python-sdk-c59985aa861c-c2ffad84badb-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-261.24374.152" />
       </set>
     </attachedChunks>
   </component>
@@ -114,11 +109,31 @@
       <option name="project" value="LOCAL" />
       <updated>1779467184506</updated>
     </task>
-    <option name="localTasksCounter" value="3" />
+    <task id="LOCAL-00003" summary="playlist improvements, audio selection, and other qol adjustments">
+      <option name="closed" value="true" />
+      <created>1779476298646</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1779476298646</updated>
+    </task>
+    <task id="LOCAL-00004" summary="playlist improvements, audio selection, and other qol adjustments">
+      <option name="closed" value="true" />
+      <created>1779480415467</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1779480415467</updated>
+    </task>
+    <option name="localTasksCounter" value="5" />
     <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="After code review" />
-    <option name="LAST_COMMIT_MESSAGE" value="After code review" />
+    <MESSAGE value="playlist improvements, audio selection, and other qol adjustments" />
+    <option name="LAST_COMMIT_MESSAGE" value="playlist improvements, audio selection, and other qol adjustments" />
   </component>
 </project>

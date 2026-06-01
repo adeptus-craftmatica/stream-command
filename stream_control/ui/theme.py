@@ -186,6 +186,12 @@ QLineEdit, QTextEdit, QPlainTextEdit, QTableWidget, QSpinBox, QComboBox {{
     padding: {control_padding};
 }}
 
+QLineEdit#inlineItemEditor {{
+    padding: 2px 6px;
+    border-radius: 6px;
+    min-height: 0;
+}}
+
 QListWidget {{
     background: #0d151c;
     border: 1px solid #243543;

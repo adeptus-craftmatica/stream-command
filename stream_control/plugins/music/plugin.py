@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSlider,
     QSpinBox,
+    QStyledItemDelegate,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -124,6 +125,14 @@ class MusicPluginConfig:
         original_count = len(self.playlists)
         self.playlists = [playlist for playlist in self.playlists if playlist.name.strip().lower() != normalized]
         return len(self.playlists) != original_count
+
+
+class _CompactLibraryRenameDelegate(QStyledItemDelegate):
+    def createEditor(self, parent, option, index):  # type: ignore[override]
+        editor = super().createEditor(parent, option, index)
+        if isinstance(editor, QLineEdit):
+            editor.setObjectName("inlineItemEditor")
+        return editor
 
 
 class MusicPage(QWidget):
@@ -327,6 +336,7 @@ class MusicPage(QWidget):
 
     def _render_library(self, tracks: list[TrackRecord]) -> None:
         self._library_tracks = list(tracks)
+        blocker = QSignalBlocker(self.library_table)
         self.library_table.setRowCount(len(tracks))
         for row, track in enumerate(tracks):
             title_item = QTableWidgetItem(track.title)
@@ -334,6 +344,7 @@ class MusicPage(QWidget):
             artist_item = QTableWidgetItem(track.artist)
             self.library_table.setItem(row, 0, title_item)
             self.library_table.setItem(row, 1, artist_item)
+        del blocker
         if self._settings.library_column_widths:
             restore_table_column_widths(self.library_table, self._settings.library_column_widths)
         else:
@@ -345,7 +356,7 @@ class MusicPage(QWidget):
         self._queue_tracks = list(tracks)
         self.queue_list.clear()
         for track in tracks:
-            item = QListWidgetItem(f"{track.title} - {track.artist}")
+            item = QListWidgetItem(self._track_display_label(track))
             item.setData(Qt.ItemDataRole.UserRole, track.id)
             self.queue_list.addItem(item)
 
@@ -486,6 +497,22 @@ class MusicPage(QWidget):
         self.library_table.setColumnWidth(0, int(viewport_width * 0.62))
         self.library_table.setColumnWidth(1, int(viewport_width * 0.34))
 
+    @staticmethod
+    def _track_display_label(track: TrackRecord) -> str:
+        title = track.title.strip() or "Untitled Track"
+        artist = track.artist.strip()
+        return title if not artist else f"{title} - {artist}"
+
+    @staticmethod
+    def _fallback_track_title(track: TrackRecord) -> str:
+        if track.title.strip():
+            return track.title.strip()
+        if track.path:
+            stem = Path(track.path).stem.replace("_", " ").replace("-", " ").strip()
+            if stem:
+                return stem
+        return "Untitled Track"
+
     def _build_playlist_card(self) -> PanelCard:
         card = PanelCard("Playlist Builder", self)
         card.layout.addWidget(
@@ -569,10 +596,14 @@ class MusicPage(QWidget):
         self.library_table.setAlternatingRowColors(True)
         self.library_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.library_table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.library_table.setItemDelegate(_CompactLibraryRenameDelegate(self.library_table))
         self.library_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.library_table.horizontalHeader().setStretchLastSection(True)
+        self.library_table.verticalHeader().setDefaultSectionSize(36)
+        self.library_table.verticalHeader().setMinimumSectionSize(32)
         self.library_table.horizontalHeader().sectionResized.connect(self._store_library_layout)
         self.library_table.itemSelectionChanged.connect(self._update_library_selection_actions)
+        self.library_table.itemChanged.connect(self._store_library_item_edit)
         library_card.layout.addWidget(self.library_table, 1)
 
         library_actions = QHBoxLayout()
@@ -661,7 +692,7 @@ class MusicPage(QWidget):
                 missing += 1
                 label = f"Missing track ({track_id})"
             else:
-                label = f"{track.title} - {track.artist}"
+                label = self._track_display_label(track)
             item = QListWidgetItem(label)
             item.setData(Qt.ItemDataRole.UserRole, track_id)
             self.playlist_tracks.addItem(item)
@@ -718,6 +749,33 @@ class MusicPage(QWidget):
         self._render_playlist_tracks()
         self.settings_changed.emit()
         self._set_message(f"Saved playlist '{name}'.")
+
+    def _store_library_item_edit(self, item: QTableWidgetItem) -> None:
+        row = item.row()
+        column = item.column()
+        if column not in {0, 1} or row < 0 or row >= len(self._library_tracks):
+            return
+
+        track = self._library_tracks[row]
+        if column == 0:
+            updated = item.text().strip() or self._fallback_track_title(track)
+            if updated != item.text():
+                blocker = QSignalBlocker(self.library_table)
+                item.setText(updated)
+                del blocker
+            if track.title == updated:
+                return
+            track.title = updated
+        else:
+            updated = item.text().strip()
+            if track.artist == updated:
+                return
+            track.artist = updated
+
+        self._render_queue(self._queue_tracks)
+        self._render_playlist_tracks()
+        self._music_service.refresh_playback_state()
+        self.settings_changed.emit()
 
     def _delete_playlist(self) -> None:
         target_name = self._settings.selected_playlist_name.strip() or self.playlist_name.text().strip()
