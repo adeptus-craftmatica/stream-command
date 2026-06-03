@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QByteArray, Qt
+from PySide6.QtCore import QByteArray, QSignalBlocker, Qt
 from PySide6.QtGui import QCloseEvent, QGuiApplication
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMainWindow,
     QPlainTextEdit,
+    QPushButton,
     QScrollArea,
     QSizePolicy,
     QSplitter,
@@ -32,6 +33,8 @@ from stream_control.core.platform import is_macos
 from stream_control.plugins.builtin import build_builtin_plugins
 from stream_control.plugins.context import PluginContext
 from stream_control.plugins.host import PluginHost
+from stream_control.services.ui_mode_service import UiModeService
+from stream_control.ui.theme import build_app_stylesheet
 from stream_control.ui.widgets.common import configure_readonly_line
 
 
@@ -43,10 +46,12 @@ class MainWindow(QMainWindow):
         self.config: AppConfig = config_store.load()
         self._did_shutdown = False
         self._hotkeys_paused_for_text_entry = False
+        self._page_widgets: list[QWidget] = []
+        self._ui_settings = self.config.plugin_settings("ui")
+        self._tablet_mode = bool(self._ui_settings.get("tablet_mode", False))
 
         self.setWindowTitle("Stream Control")
-        self.setMinimumSize(1120, 760)
-        self.resize(1360, 860)
+        self._apply_window_defaults(reset_size=True)
         self._build_shell()
 
         self.plugin_context = PluginContext(
@@ -56,13 +61,26 @@ class MainWindow(QMainWindow):
             save_callback=self._save_config,
             credential_store=CredentialStore(),
         )
+        self.ui_mode_service = UiModeService(self._tablet_mode, self)
+        self.plugin_context.register_service("ui.mode", self.ui_mode_service)
         self.plugin_host = PluginHost(self.plugin_context, build_builtin_plugins())
         self.plugin_host.activate_plugins()
         self._install_hotkey_focus_guard()
         self._install_hotkey_activity_guard()
         self._populate_navigation()
         self._restore_window_state()
+        self._apply_tablet_mode(self._tablet_mode, persist=False)
         self._save_config()
+
+    def _apply_window_defaults(self, *, reset_size: bool = False) -> None:
+        if self._tablet_mode:
+            self.setMinimumSize(900, 720)
+            if reset_size:
+                self.resize(1080, 820)
+            return
+        self.setMinimumSize(1120, 760)
+        if reset_size:
+            self.resize(1360, 860)
 
     def _build_shell(self) -> None:
         central = QWidget(self)
@@ -112,16 +130,21 @@ class MainWindow(QMainWindow):
         self.nav.currentRowChanged.connect(self._change_page)
         sidebar_layout.addWidget(self.nav, 1)
 
-        config_label = QLabel("Config file", sidebar)
-        config_label.setObjectName("sidebarMeta")
-        sidebar_layout.addWidget(config_label)
+        self.tablet_mode_button = QPushButton("Tablet Layout", sidebar)
+        self.tablet_mode_button.setCheckable(True)
+        self.tablet_mode_button.toggled.connect(self._handle_tablet_mode_toggled)
+        sidebar_layout.addWidget(self.tablet_mode_button)
 
-        config_path = QLineEdit(str(self._app_paths.config_file), sidebar)
-        config_path.setObjectName("sidebarPath")
-        config_path.setReadOnly(True)
-        config_path.setToolTip(str(self._app_paths.config_file))
-        configure_readonly_line(config_path)
-        sidebar_layout.addWidget(config_path)
+        self.config_label = QLabel("Config file", sidebar)
+        self.config_label.setObjectName("sidebarMeta")
+        sidebar_layout.addWidget(self.config_label)
+
+        self.config_path = QLineEdit(str(self._app_paths.config_file), sidebar)
+        self.config_path.setObjectName("sidebarPath")
+        self.config_path.setReadOnly(True)
+        self.config_path.setToolTip(str(self._app_paths.config_file))
+        configure_readonly_line(self.config_path)
+        sidebar_layout.addWidget(self.config_path)
 
         content = QWidget(central)
         content.setObjectName("contentArea")
@@ -144,6 +167,7 @@ class MainWindow(QMainWindow):
             item = QListWidgetItem(page.title)
             item.setData(Qt.ItemDataRole.UserRole, page.plugin_id)
             self.nav.addItem(item)
+            self._page_widgets.append(page.widget)
             self.stack.addWidget(self._wrap_page(page.widget))
         if self.nav.count():
             self.nav.setCurrentRow(0)
@@ -216,6 +240,38 @@ class MainWindow(QMainWindow):
 
     def _save_config(self) -> None:
         self._config_store.save(self.config)
+
+    def _handle_tablet_mode_toggled(self, enabled: bool) -> None:
+        self._apply_tablet_mode(enabled)
+
+    def _apply_tablet_mode(self, enabled: bool, *, persist: bool = True) -> None:
+        enabled = bool(enabled)
+        self._tablet_mode = enabled
+        self._apply_window_defaults(reset_size=False)
+
+        app = QApplication.instance()
+        if app is not None:
+            app.setStyleSheet(build_app_stylesheet(tablet_mode=enabled))
+
+        button_blocker = QSignalBlocker(self.tablet_mode_button)
+        self.tablet_mode_button.setChecked(enabled)
+        self.tablet_mode_button.setText("Tablet Layout On" if enabled else "Tablet Layout")
+        del button_blocker
+
+        self.config_label.setVisible(not enabled)
+        self.config_path.setVisible(not enabled)
+        self.splitter.setSizes([210, 920] if enabled else [250, 1110])
+
+        self.ui_mode_service.set_tablet_mode(enabled)
+        for widget in self._page_widgets:
+            setter = getattr(widget, "set_tablet_mode", None)
+            if callable(setter):
+                setter(enabled)
+
+        if persist:
+            self._ui_settings["tablet_mode"] = enabled
+            self.config.set_plugin_settings("ui", self._ui_settings)
+            self._save_config()
 
     def shutdown(self) -> None:
         if self._did_shutdown:

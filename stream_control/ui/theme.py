@@ -3,23 +3,38 @@ from __future__ import annotations
 from stream_control.core.platform import is_macos
 
 
-def build_app_stylesheet() -> str:
+def build_app_stylesheet(tablet_mode: bool = False) -> str:
     macos = is_macos()
     font_stack = '"SF Pro Text", "SF Pro Display", "Segoe UI", "Inter", "Noto Sans"'
-    page_title_size = "30px" if macos else "26px"
-    brand_title_size = "24px" if macos else "22px"
-    metric_value_size = "30px" if macos else "27px"
-    button_height = "40px" if macos else "36px"
-    control_padding = "9px 12px" if macos else "8px 10px"
+    base_font_size = "15px" if tablet_mode else "13px"
+    page_title_size = "34px" if tablet_mode else ("30px" if macos else "26px")
+    brand_title_size = "28px" if tablet_mode else ("24px" if macos else "22px")
+    metric_value_size = "34px" if tablet_mode else ("30px" if macos else "27px")
+    button_height = "52px" if tablet_mode else ("40px" if macos else "36px")
+    control_padding = "12px 14px" if tablet_mode else ("9px 12px" if macos else "8px 10px")
     panel_radius = "14px"
     header_radius = "18px"
     pill_radius = "999px"
     scroll_thumb_radius = "5px"
+    sidebar_pill_font_size = "12px" if tablet_mode else "11px"
+    section_title_size = "20px" if tablet_mode else "17px"
+    metric_label_size = "12px" if tablet_mode else "11px"
+    sidebar_meta_size = "12px" if tablet_mode else "11px"
+    tab_padding = "14px 22px" if tablet_mode else "11px 18px"
+    tab_min_width = "144px" if tablet_mode else "118px"
+    nav_padding = "14px 18px" if tablet_mode else "10px 14px"
+    nav_margin = "4px 0" if tablet_mode else "3px 0"
+    header_padding = "12px 10px" if tablet_mode else "10px 8px"
+    slider_height = "10px" if tablet_mode else "8px"
+    slider_handle_size = "22px" if tablet_mode else "18px"
+    slider_handle_margin = "-7px 0" if tablet_mode else "-6px 0"
+    scrollbar_width = "14px" if tablet_mode else "10px"
+    scrollbar_min_height = "40px" if tablet_mode else "28px"
     return f"""
 QWidget {{
     color: #e7edf3;
     font-family: {font_stack};
-    font-size: 13px;
+    font-size: {base_font_size};
 }}
 
 QLabel {{
@@ -56,7 +71,7 @@ QLabel#brandPill {{
     color: #8ed8e5;
     border: 1px solid #285261;
     border-radius: {pill_radius};
-    font-size: 11px;
+    font-size: {sidebar_pill_font_size};
     font-weight: 700;
     padding: 4px 10px;
 }}
@@ -79,7 +94,7 @@ QLabel#mutedText {{
 
 QLabel#sidebarMeta {{
     color: #6f7f8d;
-    font-size: 11px;
+    font-size: {sidebar_meta_size};
     font-weight: 600;
 }}
 
@@ -93,13 +108,13 @@ QLineEdit#sidebarPath {{
 
 QLabel#sectionTitle {{
     color: #f2f6fa;
-    font-size: 17px;
+    font-size: {section_title_size};
     font-weight: 700;
 }}
 
 QLabel#metricLabel {{
     color: #88a1b4;
-    font-size: 11px;
+    font-size: {metric_label_size};
     font-weight: 700;
 }}
 
@@ -219,9 +234,9 @@ QTabBar::tab {{
     color: #a8bac8;
     border-top-left-radius: 12px;
     border-top-right-radius: 12px;
-    padding: 11px 18px;
+    padding: {tab_padding};
     margin-right: 8px;
-    min-width: 118px;
+    min-width: {tab_min_width};
     font-weight: 600;
 }}
 
@@ -247,8 +262,8 @@ QListWidget#sidebarNav::item {{
     border: 1px solid transparent;
     border-radius: 12px;
     color: #a8bac8;
-    margin: 3px 0;
-    padding: 10px 14px;
+    margin: {nav_margin};
+    padding: {nav_padding};
 }}
 
 QListWidget#sidebarNav::item:hover {{
@@ -273,7 +288,7 @@ QHeaderView::section {{
     color: #adc0ce;
     border: none;
     border-bottom: 1px solid #243543;
-    padding: 10px 8px;
+    padding: {header_padding};
 }}
 
 QTableWidget {{
@@ -307,16 +322,16 @@ QGroupBox::title {{
 QSlider::groove:horizontal {{
     background: #101921;
     border: 1px solid #243543;
-    height: 8px;
+    height: {slider_height};
     border-radius: 999px;
 }}
 
 QSlider::handle:horizontal {{
     background: #68bfd4;
     border: 1px solid #8fd3e4;
-    width: 18px;
-    margin: -6px 0;
-    border-radius: 9px;
+    width: {slider_handle_size};
+    margin: {slider_handle_margin};
+    border-radius: 11px;
 }}
 
 QAbstractSpinBox::up-button, QAbstractSpinBox::down-button {{
@@ -326,13 +341,13 @@ QAbstractSpinBox::up-button, QAbstractSpinBox::down-button {{
 
 QScrollBar:vertical {{
     background: transparent;
-    width: 10px;
+    width: {scrollbar_width};
     margin: 2px;
 }}
 
 QScrollBar::handle:vertical {{
     background: #243543;
-    min-height: 28px;
+    min-height: {scrollbar_min_height};
     border-radius: {scroll_thumb_radius};
 }}
 

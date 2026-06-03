@@ -1,9 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="c15f1be3-dc97-4510-8178-6a294f5f3fc5" name="Changes" comment="playlist improvements, audio selection, and other qol adjustments">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-    </list>
+    <list default="true" id="c15f1be3-dc97-4510-8178-6a294f5f3fc5" name="Changes" comment="corrected a graphical bug that would happen when trying to edit a tracks name." />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -125,7 +123,15 @@
       <option name="project" value="LOCAL" />
       <updated>1779480415467</updated>
     </task>
-    <option name="localTasksCounter" value="5" />
+    <task id="LOCAL-00005" summary="corrected a graphical bug that would happen when trying to edit a tracks name.">
+      <option name="closed" value="true" />
+      <created>1780317235211</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1780317235211</updated>
+    </task>
+    <option name="localTasksCounter" value="6" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -134,6 +140,7 @@
   <component name="VcsManagerConfiguration">
     <MESSAGE value="After code review" />
     <MESSAGE value="playlist improvements, audio selection, and other qol adjustments" />
-    <option name="LAST_COMMIT_MESSAGE" value="playlist improvements, audio selection, and other qol adjustments" />
+    <MESSAGE value="corrected a graphical bug that would happen when trying to edit a tracks name." />
+    <option name="LAST_COMMIT_MESSAGE" value="corrected a graphical bug that would happen when trying to edit a tracks name." />
   </component>
 </project>

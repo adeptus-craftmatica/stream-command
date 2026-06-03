@@ -15,15 +15,17 @@ from stream_control.ui.theme import build_app_stylesheet
 
 def main() -> int:
     configure_app_logging()
+    paths = AppPaths.build()
+    config_store = ConfigStore(paths)
+    app_config = config_store.load()
+    tablet_mode = bool(app_config.plugin_settings("ui").get("tablet_mode", False))
+
     app = QApplication(sys.argv)
     app.setApplicationName("Stream Control")
     app.setApplicationDisplayName("Stream Control")
     app.setOrganizationName("StreamControl")
     app.setStyle("Fusion")
-    app.setStyleSheet(build_app_stylesheet())
-
-    paths = AppPaths.build()
-    config_store = ConfigStore(paths)
+    app.setStyleSheet(build_app_stylesheet(tablet_mode=tablet_mode))
 
     loop = QEventLoop(app)
     asyncio.set_event_loop(loop)

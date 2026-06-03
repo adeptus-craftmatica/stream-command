@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from PySide6.QtWidgets import (
+    QBoxLayout,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -49,12 +50,19 @@ class DashboardPage(QWidget):
         layout.addWidget(hero)
 
         metrics_layout = QGridLayout()
+        self.metrics_layout = metrics_layout
         metrics_layout.setHorizontalSpacing(16)
         metrics_layout.setVerticalSpacing(16)
         self.obs_metric = MetricCard("OBS", "Offline", "WebSocket control for scenes and actions.")
         self.streamlabs_metric = MetricCard("Streamlabs", "Offline", "Desktop remote bridge for Streamlabs Desktop.")
         self.library_metric = MetricCard("Music Library", "0 tracks", "Local folders can feed playback and overlays.")
         self.hotkey_metric = MetricCard("Hotkeys", "Standby", "Global shortcuts can trigger plugin actions.")
+        self.metric_cards = [
+            self.obs_metric,
+            self.streamlabs_metric,
+            self.library_metric,
+            self.hotkey_metric,
+        ]
 
         metrics_layout.addWidget(self.obs_metric, 0, 0)
         metrics_layout.addWidget(self.streamlabs_metric, 0, 1)
@@ -66,6 +74,7 @@ class DashboardPage(QWidget):
 
         actions_card = PanelCard("Quick Actions", self)
         actions = QHBoxLayout()
+        self.actions_layout = actions
         play_pause = QPushButton("Play or Pause Music", actions_card)
         play_pause.setObjectName("primaryButton")
         play_pause.setEnabled(self._music_service is not None)
@@ -92,6 +101,24 @@ class DashboardPage(QWidget):
         actions_card.layout.addWidget(self.now_playing)
         layout.addWidget(actions_card)
         layout.addStretch(1)
+
+    def set_tablet_mode(self, enabled: bool) -> None:
+        for card in self.metric_cards:
+            self.metrics_layout.removeWidget(card)
+        if enabled:
+            for row, card in enumerate(self.metric_cards):
+                self.metrics_layout.addWidget(card, row, 0)
+            self.metrics_layout.setColumnStretch(0, 1)
+            self.metrics_layout.setColumnStretch(1, 0)
+            self.actions_layout.setDirection(QBoxLayout.Direction.TopToBottom)
+            return
+        self.metrics_layout.addWidget(self.obs_metric, 0, 0)
+        self.metrics_layout.addWidget(self.streamlabs_metric, 0, 1)
+        self.metrics_layout.addWidget(self.library_metric, 1, 0)
+        self.metrics_layout.addWidget(self.hotkey_metric, 1, 1)
+        self.metrics_layout.setColumnStretch(0, 1)
+        self.metrics_layout.setColumnStretch(1, 1)
+        self.actions_layout.setDirection(QBoxLayout.Direction.LeftToRight)
 
     def set_obs_status(self, connected: bool, message: str) -> None:
         self.obs_metric.set_value("Connected" if connected else "Offline")

@@ -152,6 +152,7 @@ class MusicService(QObject):
             self.status_message.emit("Select at least one playable track first.")
             return
         self._queue.extend(added)
+        self._sync_session_context_with_queue()
         self.queue_changed.emit(list(self._queue))
         if len(added) == 1:
             self.status_message.emit(f"Queued {added[0].title}.")
@@ -172,6 +173,60 @@ class MusicService(QObject):
                     self._playback_context_index = current_index
         self.queue_changed.emit(list(self._queue))
         self._emit_playback_state()
+
+    def remove_queue_indices(self, indices: list[int]) -> None:
+        normalized = sorted({index for index in indices if 0 <= index < len(self._queue)}, reverse=True)
+        if not normalized:
+            self.status_message.emit("Select at least one queued track first.")
+            return
+        removed = [self._queue[index] for index in normalized]
+        for index in normalized:
+            del self._queue[index]
+        self._sync_session_context_with_queue()
+        self.queue_changed.emit(list(self._queue))
+        if len(removed) == 1:
+            self.status_message.emit(f"Removed {removed[0].title} from the queue.")
+        else:
+            self.status_message.emit(f"Removed {len(removed)} tracks from the queue.")
+        self._emit_playback_state()
+
+    def move_queue_indices(self, indices: list[int], direction: int) -> bool:
+        normalized = sorted({index for index in indices if 0 <= index < len(self._queue)})
+        if not normalized or direction not in {-1, 1}:
+            return False
+
+        moved = False
+        if direction < 0:
+            for index in normalized:
+                if index <= 0 or index - 1 in normalized:
+                    continue
+                self._queue[index - 1], self._queue[index] = self._queue[index], self._queue[index - 1]
+                moved = True
+        else:
+            for index in reversed(normalized):
+                if index >= len(self._queue) - 1 or index + 1 in normalized:
+                    continue
+                self._queue[index], self._queue[index + 1] = self._queue[index + 1], self._queue[index]
+                moved = True
+
+        if not moved:
+            return False
+        self._sync_session_context_with_queue()
+        self.queue_changed.emit(list(self._queue))
+        direction_label = "up" if direction < 0 else "down"
+        self.status_message.emit(f"Moved {len(normalized)} queue track(s) {direction_label}.")
+        self._emit_playback_state()
+        return True
+
+    def shuffle_queue(self) -> bool:
+        if len(self._queue) <= 1:
+            return False
+        random.shuffle(self._queue)
+        self._sync_session_context_with_queue()
+        self.queue_changed.emit(list(self._queue))
+        self.status_message.emit("Shuffled the queue.")
+        self._emit_playback_state()
+        return True
 
     def set_overlay_idle_message(self, message: str) -> None:
         cleaned = message.strip()
@@ -477,6 +532,11 @@ class MusicService(QObject):
             self._playback_context_index = 0
             return self._playback_context[0]
         return None
+
+    def _sync_session_context_with_queue(self) -> None:
+        if self._playback_context_source != "session" or self._current_track is None:
+            return
+        self._set_playback_context([self._current_track, *self._queue], 0, source="session")
 
     def _build_context_sequence(
         self,

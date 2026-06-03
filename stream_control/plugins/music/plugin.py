@@ -6,6 +6,7 @@ from pathlib import Path
 from PySide6.QtCore import QSignalBlocker, Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QBoxLayout,
     QCheckBox,
     QComboBox,
     QFileDialog,
@@ -142,7 +143,8 @@ class MusicPage(QWidget):
         super().__init__(parent)
         self._settings = settings
         self._music_service = music_service
-        self._library_tracks: list[TrackRecord] = list(settings.music_library)
+        self._all_library_tracks: list[TrackRecord] = list(settings.music_library)
+        self._library_tracks: list[TrackRecord] = list(self._all_library_tracks)
         self._queue_tracks: list[TrackRecord] = []
         self._playlist_track_ids: list[str] = []
         self._is_scrubbing = False
@@ -182,6 +184,7 @@ class MusicPage(QWidget):
 
         controls_card = PanelCard("Playback Controls", self)
         controls_row = QHBoxLayout()
+        self.controls_row = controls_row
         play_pause = QPushButton("Play or Pause", controls_card)
         play_pause.setObjectName("primaryButton")
         play_pause.clicked.connect(self._music_service.toggle_play_pause)
@@ -281,6 +284,7 @@ class MusicPage(QWidget):
         top_row.setSpacing(12)
         top_row.addWidget(controls_card, 3)
         top_row.addWidget(overlay_card, 2)
+        self.top_row = top_row
         layout.addLayout(top_row)
 
         self.music_tabs = QTabWidget(self)
@@ -293,8 +297,8 @@ class MusicPage(QWidget):
         self._music_service.playback_changed.connect(self._update_playback)
         self._music_service.status_message.connect(self._set_message)
 
-        if self._library_tracks:
-            self._render_library(self._library_tracks)
+        if self._all_library_tracks:
+            self._render_library(self._all_library_tracks)
         self._populate_output_devices()
         self._render_playlists()
         self._restore_playlist_state()
@@ -303,6 +307,22 @@ class MusicPage(QWidget):
         else:
             self._apply_default_library_widths()
         self._update_library_selection_actions()
+        self._update_library_summary()
+        self._update_queue_summary()
+        self._update_queue_actions()
+        self._update_playlist_actions()
+
+    def set_tablet_mode(self, enabled: bool) -> None:
+        self.top_row.setDirection(
+            QBoxLayout.Direction.TopToBottom if enabled else QBoxLayout.Direction.LeftToRight
+        )
+        self.library_queue_row.setDirection(
+            QBoxLayout.Direction.TopToBottom if enabled else QBoxLayout.Direction.LeftToRight
+        )
+        self.playlist_lists_row.setDirection(
+            QBoxLayout.Direction.TopToBottom if enabled else QBoxLayout.Direction.LeftToRight
+        )
+        self.music_tabs.tabBar().setExpanding(enabled)
 
     def set_overlay_url(self, overlay_url: str) -> None:
         self.overlay_url.setText(overlay_url)
@@ -335,10 +355,25 @@ class MusicPage(QWidget):
         self.settings_changed.emit()
 
     def _render_library(self, tracks: list[TrackRecord]) -> None:
-        self._library_tracks = list(tracks)
+        self._all_library_tracks = list(tracks)
+        self._apply_library_filter()
+
+    def _apply_library_filter(self) -> None:
+        query = self.library_search.text().strip().lower() if hasattr(self, "library_search") else ""
+        if not query:
+            filtered = list(self._all_library_tracks)
+        else:
+            filtered = [
+                track
+                for track in self._all_library_tracks
+                if query in track.title.lower()
+                or query in track.artist.lower()
+                or query in Path(track.path).stem.lower()
+            ]
+        self._library_tracks = filtered
         blocker = QSignalBlocker(self.library_table)
-        self.library_table.setRowCount(len(tracks))
-        for row, track in enumerate(tracks):
+        self.library_table.setRowCount(len(filtered))
+        for row, track in enumerate(filtered):
             title_item = QTableWidgetItem(track.title)
             title_item.setData(Qt.ItemDataRole.UserRole, track.id)
             artist_item = QTableWidgetItem(track.artist)
@@ -349,6 +384,7 @@ class MusicPage(QWidget):
             restore_table_column_widths(self.library_table, self._settings.library_column_widths)
         else:
             self._apply_default_library_widths()
+        self._update_library_summary()
         self._render_playlist_tracks()
         self._update_library_selection_actions()
 
@@ -359,6 +395,8 @@ class MusicPage(QWidget):
             item = QListWidgetItem(self._track_display_label(track))
             item.setData(Qt.ItemDataRole.UserRole, track.id)
             self.queue_list.addItem(item)
+        self._update_queue_summary()
+        self._update_queue_actions()
 
     def _selected_tracks(self) -> list[TrackRecord]:
         selection_model = self.library_table.selectionModel()
@@ -497,6 +535,24 @@ class MusicPage(QWidget):
         self.library_table.setColumnWidth(0, int(viewport_width * 0.62))
         self.library_table.setColumnWidth(1, int(viewport_width * 0.34))
 
+    def _update_library_summary(self) -> None:
+        shown = len(self._library_tracks)
+        total = len(self._all_library_tracks)
+        if total == 0:
+            self.library_summary.setText("Library is empty. Add a music folder to get started.")
+            return
+        if shown == total:
+            self.library_summary.setText(f"{total} track(s) in your library.")
+            return
+        self.library_summary.setText(f"Showing {shown} of {total} library track(s).")
+
+    def _update_queue_summary(self) -> None:
+        count = len(self._queue_tracks)
+        if count == 0:
+            self.queue_summary.setText("Queue is empty.")
+            return
+        self.queue_summary.setText(f"{count} track(s) waiting in the queue.")
+
     @staticmethod
     def _track_display_label(track: TrackRecord) -> str:
         title = track.title.strip() or "Untitled Track"
@@ -539,6 +595,7 @@ class MusicPage(QWidget):
         card.layout.addLayout(name_row)
 
         lists_row = QHBoxLayout()
+        self.playlist_lists_row = lists_row
 
         saved_column = QVBoxLayout()
         saved_column.addWidget(QLabel("Saved playlists", card))
@@ -550,30 +607,42 @@ class MusicPage(QWidget):
         tracks_column = QVBoxLayout()
         tracks_column.addWidget(QLabel("Tracks in current playlist", card))
         self.playlist_tracks = QListWidget(card)
+        self.playlist_tracks.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.playlist_tracks.itemSelectionChanged.connect(self._update_playlist_actions)
         tracks_column.addWidget(self.playlist_tracks, 1)
         lists_row.addLayout(tracks_column, 2)
 
         card.layout.addLayout(lists_row, 1)
 
-        actions = QHBoxLayout()
+        track_actions = QHBoxLayout()
         self.playlist_add_button = QPushButton("Add Track From Library", card)
         self.playlist_add_button.setObjectName("primaryButton")
         self.playlist_add_button.clicked.connect(self._add_selected_tracks_to_playlist)
-        remove_track = QPushButton("Remove Playlist Track", card)
-        remove_track.clicked.connect(self._remove_selected_playlist_track)
-        clear_tracks = QPushButton("Clear Playlist", card)
-        clear_tracks.clicked.connect(self._clear_playlist_tracks)
-        queue_playlist = QPushButton("Add Playlist To Queue", card)
-        queue_playlist.clicked.connect(self._queue_playlist)
-        play_playlist = QPushButton("Play Playlist", card)
-        play_playlist.clicked.connect(self._play_playlist)
-        actions.addWidget(self.playlist_add_button)
-        actions.addWidget(remove_track)
-        actions.addWidget(clear_tracks)
-        actions.addWidget(queue_playlist)
-        actions.addWidget(play_playlist)
-        actions.addStretch(1)
-        card.layout.addLayout(actions)
+        self.playlist_move_up_button = QPushButton("Move Up", card)
+        self.playlist_move_up_button.clicked.connect(lambda: self._move_selected_playlist_tracks(-1))
+        self.playlist_move_down_button = QPushButton("Move Down", card)
+        self.playlist_move_down_button.clicked.connect(lambda: self._move_selected_playlist_tracks(1))
+        self.remove_playlist_track_button = QPushButton("Remove Selected", card)
+        self.remove_playlist_track_button.clicked.connect(self._remove_selected_playlist_tracks)
+        self.clear_playlist_button = QPushButton("Clear Playlist", card)
+        self.clear_playlist_button.clicked.connect(self._clear_playlist_tracks)
+        track_actions.addWidget(self.playlist_add_button)
+        track_actions.addWidget(self.playlist_move_up_button)
+        track_actions.addWidget(self.playlist_move_down_button)
+        track_actions.addWidget(self.remove_playlist_track_button)
+        track_actions.addWidget(self.clear_playlist_button)
+        track_actions.addStretch(1)
+        card.layout.addLayout(track_actions)
+
+        playlist_actions = QHBoxLayout()
+        self.queue_playlist_button = QPushButton("Add Playlist To Queue", card)
+        self.queue_playlist_button.clicked.connect(self._queue_playlist)
+        self.play_playlist_button = QPushButton("Play Playlist", card)
+        self.play_playlist_button.clicked.connect(self._play_playlist)
+        playlist_actions.addWidget(self.queue_playlist_button)
+        playlist_actions.addWidget(self.play_playlist_button)
+        playlist_actions.addStretch(1)
+        card.layout.addLayout(playlist_actions)
 
         self.playlist_status = QLabel("", card)
         self.playlist_status.setObjectName("mutedText")
@@ -589,8 +658,25 @@ class MusicPage(QWidget):
 
         content_row = QHBoxLayout()
         content_row.setSpacing(12)
+        self.library_queue_row = content_row
 
         library_card = PanelCard("Library", tab)
+        search_row = QHBoxLayout()
+        search_row.addWidget(QLabel("Search", library_card))
+        self.library_search = QLineEdit(library_card)
+        self.library_search.setPlaceholderText("Filter by title, artist, or file name")
+        self.library_search.textChanged.connect(lambda _text: self._apply_library_filter())
+        search_row.addWidget(self.library_search, 1)
+        clear_search = QPushButton("Clear", library_card)
+        clear_search.clicked.connect(self.library_search.clear)
+        search_row.addWidget(clear_search)
+        library_card.layout.addLayout(search_row)
+
+        self.library_summary = QLabel("", library_card)
+        self.library_summary.setObjectName("mutedText")
+        self.library_summary.setWordWrap(True)
+        library_card.layout.addWidget(self.library_summary)
+
         self.library_table = QTableWidget(0, 2, library_card)
         self.library_table.setHorizontalHeaderLabels(["Title", "Artist"])
         self.library_table.setAlternatingRowColors(True)
@@ -621,14 +707,38 @@ class MusicPage(QWidget):
         library_card.layout.addLayout(library_actions)
 
         queue_card = PanelCard("Queue", tab)
+        self.queue_summary = QLabel("Queue is empty.", queue_card)
+        self.queue_summary.setObjectName("mutedText")
+        self.queue_summary.setWordWrap(True)
+        queue_card.layout.addWidget(self.queue_summary)
         self.queue_list = QListWidget(queue_card)
+        self.queue_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.queue_list.itemSelectionChanged.connect(self._update_queue_actions)
         queue_card.layout.addWidget(self.queue_list, 1)
-        save_queue = QPushButton("Save Queue As Playlist", queue_card)
-        save_queue.clicked.connect(self._save_queue_as_playlist)
-        queue_card.layout.addWidget(save_queue)
-        clear_queue = QPushButton("Clear Queue", queue_card)
-        clear_queue.clicked.connect(self._music_service.clear_queue)
-        queue_card.layout.addWidget(clear_queue)
+
+        queue_primary_actions = QHBoxLayout()
+        self.queue_move_up_button = QPushButton("Move Up", queue_card)
+        self.queue_move_up_button.clicked.connect(lambda: self._move_selected_queue_tracks(-1))
+        self.queue_move_down_button = QPushButton("Move Down", queue_card)
+        self.queue_move_down_button.clicked.connect(lambda: self._move_selected_queue_tracks(1))
+        self.queue_remove_button = QPushButton("Remove Selected", queue_card)
+        self.queue_remove_button.clicked.connect(self._remove_selected_queue_tracks)
+        queue_primary_actions.addWidget(self.queue_move_up_button)
+        queue_primary_actions.addWidget(self.queue_move_down_button)
+        queue_primary_actions.addWidget(self.queue_remove_button)
+        queue_card.layout.addLayout(queue_primary_actions)
+
+        queue_secondary_actions = QHBoxLayout()
+        self.queue_shuffle_button = QPushButton("Shuffle Queue", queue_card)
+        self.queue_shuffle_button.clicked.connect(self._shuffle_queue)
+        self.save_queue_button = QPushButton("Save Queue As Playlist", queue_card)
+        self.save_queue_button.clicked.connect(self._save_queue_as_playlist)
+        self.clear_queue_button = QPushButton("Clear Queue", queue_card)
+        self.clear_queue_button.clicked.connect(self._music_service.clear_queue)
+        queue_secondary_actions.addWidget(self.queue_shuffle_button)
+        queue_secondary_actions.addWidget(self.save_queue_button)
+        queue_secondary_actions.addWidget(self.clear_queue_button)
+        queue_card.layout.addLayout(queue_secondary_actions)
 
         content_row.addWidget(library_card, 2)
         content_row.addWidget(queue_card, 1)
@@ -684,7 +794,7 @@ class MusicPage(QWidget):
 
     def _render_playlist_tracks(self) -> None:
         self.playlist_tracks.clear()
-        track_lookup = {track.id: track for track in self._library_tracks}
+        track_lookup = {track.id: track for track in self._all_library_tracks}
         missing = 0
         for track_id in self._playlist_track_ids:
             track = track_lookup.get(track_id)
@@ -703,6 +813,7 @@ class MusicPage(QWidget):
             self.playlist_status.setText(summary)
         else:
             self.playlist_status.setText("Start a playlist, then add tracks from the library.")
+        self._update_playlist_actions()
 
     def _new_playlist(self) -> None:
         blocker = QSignalBlocker(self.playlist_list)
@@ -734,6 +845,60 @@ class MusicPage(QWidget):
             return
         for button in buttons:
             button.setText("Add Track From Library")
+
+    def _selected_queue_rows(self) -> list[int]:
+        return sorted({index.row() for index in self.queue_list.selectedIndexes()})
+
+    def _select_queue_rows(self, rows: list[int]) -> None:
+        self.queue_list.clearSelection()
+        for row in rows:
+            item = self.queue_list.item(row)
+            if item is not None:
+                item.setSelected(True)
+
+    def _update_queue_actions(self) -> None:
+        selected = self._selected_queue_rows()
+        has_selection = bool(selected)
+        can_move_up = has_selection and selected[0] > 0
+        can_move_down = has_selection and selected[-1] < len(self._queue_tracks) - 1
+        self.queue_move_up_button.setEnabled(can_move_up)
+        self.queue_move_down_button.setEnabled(can_move_down)
+        self.queue_remove_button.setEnabled(has_selection)
+        self.queue_shuffle_button.setEnabled(len(self._queue_tracks) > 1)
+        self.save_queue_button.setEnabled(bool(self._queue_tracks))
+        self.clear_queue_button.setEnabled(bool(self._queue_tracks))
+
+    def _remove_selected_queue_tracks(self) -> None:
+        rows = self._selected_queue_rows()
+        if not rows:
+            self._set_message("Select at least one queued track first.")
+            return
+        self._music_service.remove_queue_indices(rows)
+
+    def _move_selected_queue_tracks(self, direction: int) -> None:
+        rows = self._selected_queue_rows()
+        if not rows:
+            self._set_message("Select at least one queued track first.")
+            return
+        new_rows = [
+            row + direction
+            if (
+                (direction < 0 and row > 0 and row - 1 not in rows)
+                or (direction > 0 and row < len(self._queue_tracks) - 1 and row + 1 not in rows)
+            )
+            else row
+            for row in rows
+        ]
+        if self._music_service.move_queue_indices(rows, direction):
+            self._select_queue_rows(new_rows)
+            return
+        edge = "top" if direction < 0 else "bottom"
+        self._set_message(f"Selected queue track(s) are already at the {edge}.")
+
+    def _shuffle_queue(self) -> None:
+        if self._music_service.shuffle_queue():
+            return
+        self._set_message("Queue needs at least two tracks before it can be shuffled.")
 
     def _save_playlist(self) -> None:
         name = self.playlist_name.text().strip()
@@ -772,6 +937,7 @@ class MusicPage(QWidget):
                 return
             track.artist = updated
 
+        self._apply_library_filter()
         self._render_queue(self._queue_tracks)
         self._render_playlist_tracks()
         self._music_service.refresh_playback_state()
@@ -803,15 +969,89 @@ class MusicPage(QWidget):
             return
         self._set_message(f"Added {len(tracks)} tracks to the current playlist.")
 
-    def _remove_selected_playlist_track(self) -> None:
-        row = self.playlist_tracks.currentRow()
-        if row < 0 or row >= len(self._playlist_track_ids):
-            self._set_message("Select a playlist track first.")
+    def _selected_playlist_rows(self) -> list[int]:
+        return sorted({index.row() for index in self.playlist_tracks.selectedIndexes()})
+
+    def _select_playlist_rows(self, rows: list[int]) -> None:
+        self.playlist_tracks.clearSelection()
+        for row in rows:
+            item = self.playlist_tracks.item(row)
+            if item is not None:
+                item.setSelected(True)
+
+    def _update_playlist_actions(self) -> None:
+        selected = self._selected_playlist_rows()
+        has_selection = bool(selected)
+        can_move_up = has_selection and selected[0] > 0
+        can_move_down = has_selection and selected[-1] < len(self._playlist_track_ids) - 1
+        self.playlist_move_up_button.setEnabled(can_move_up)
+        self.playlist_move_down_button.setEnabled(can_move_down)
+        self.remove_playlist_track_button.setEnabled(has_selection)
+        has_tracks = bool(self._playlist_track_ids)
+        self.clear_playlist_button.setEnabled(has_tracks)
+        self.queue_playlist_button.setEnabled(has_tracks)
+        self.play_playlist_button.setEnabled(has_tracks)
+
+    def _remove_selected_playlist_tracks(self) -> None:
+        rows = self._selected_playlist_rows()
+        if not rows:
+            self._set_message("Select at least one playlist track first.")
             return
-        removed_id = self._playlist_track_ids.pop(row)
+        removed_count = len(rows)
+        for row in reversed(rows):
+            del self._playlist_track_ids[row]
         self._render_playlist_tracks()
         self.settings_changed.emit()
-        self._set_message(f"Removed track {removed_id} from the current playlist.")
+        if removed_count == 1:
+            self._set_message("Removed 1 track from the current playlist.")
+            return
+        self._set_message(f"Removed {removed_count} tracks from the current playlist.")
+
+    def _move_selected_playlist_tracks(self, direction: int) -> None:
+        rows = self._selected_playlist_rows()
+        if not rows:
+            self._set_message("Select at least one playlist track first.")
+            return
+
+        moved = False
+        if direction < 0:
+            for row in rows:
+                if row <= 0 or row - 1 in rows:
+                    continue
+                self._playlist_track_ids[row - 1], self._playlist_track_ids[row] = (
+                    self._playlist_track_ids[row],
+                    self._playlist_track_ids[row - 1],
+                )
+                moved = True
+        else:
+            for row in reversed(rows):
+                if row >= len(self._playlist_track_ids) - 1 or row + 1 in rows:
+                    continue
+                self._playlist_track_ids[row], self._playlist_track_ids[row + 1] = (
+                    self._playlist_track_ids[row + 1],
+                    self._playlist_track_ids[row],
+                )
+                moved = True
+
+        if not moved:
+            edge = "top" if direction < 0 else "bottom"
+            self._set_message(f"Selected playlist track(s) are already at the {edge}.")
+            return
+
+        new_rows = [
+            row + direction
+            if (
+                (direction < 0 and row > 0 and row - 1 not in rows)
+                or (direction > 0 and row < len(self._playlist_track_ids) - 1 and row + 1 not in rows)
+            )
+            else row
+            for row in rows
+        ]
+        self._render_playlist_tracks()
+        self._select_playlist_rows(new_rows)
+        self.settings_changed.emit()
+        direction_label = "up" if direction < 0 else "down"
+        self._set_message(f"Moved {len(rows)} playlist track(s) {direction_label}.")
 
     def _clear_playlist_tracks(self) -> None:
         self._playlist_track_ids = []
@@ -820,7 +1060,7 @@ class MusicPage(QWidget):
         self._set_message("Cleared the current playlist draft.")
 
     def _resolve_playlist_tracks(self) -> tuple[list[TrackRecord], int]:
-        track_lookup = {track.id: track for track in self._library_tracks}
+        track_lookup = {track.id: track for track in self._all_library_tracks}
         resolved: list[TrackRecord] = []
         missing = 0
         for track_id in self._playlist_track_ids:

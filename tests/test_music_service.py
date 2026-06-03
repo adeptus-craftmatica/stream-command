@@ -83,6 +83,49 @@ def test_music_service_queues_multiple_tracks_and_reports_transition_settings() 
     assert app is not None
 
 
+def test_music_service_remove_queue_indices_updates_session_context() -> None:
+    app = QApplication.instance() or QApplication([])
+    service = MusicService()
+    tracks = [
+        TrackRecord(id="track-1", path="/tmp/one.mp3", title="One", artist="Artist"),
+        TrackRecord(id="track-2", path="/tmp/two.mp3", title="Two", artist="Artist"),
+        TrackRecord(id="track-3", path="/tmp/three.mp3", title="Three", artist="Artist"),
+    ]
+    service._current_track = tracks[0]
+    service._queue = [tracks[1], tracks[2]]
+    service._set_playback_context(list(tracks), 0, source="session")
+
+    service.remove_queue_indices([1])
+
+    assert [track.id for track in service.queue()] == ["track-2"]
+    assert [track.id for track in service._playback_context] == ["track-1", "track-2"]
+    assert app is not None
+
+
+def test_music_service_can_move_and_shuffle_queue(monkeypatch) -> None:
+    app = QApplication.instance() or QApplication([])
+    service = MusicService()
+    tracks = [
+        TrackRecord(id="track-1", path="/tmp/one.mp3", title="One", artist="Artist"),
+        TrackRecord(id="track-2", path="/tmp/two.mp3", title="Two", artist="Artist"),
+        TrackRecord(id="track-3", path="/tmp/three.mp3", title="Three", artist="Artist"),
+        TrackRecord(id="track-4", path="/tmp/four.mp3", title="Four", artist="Artist"),
+    ]
+    service._current_track = tracks[0]
+    service._queue = [tracks[1], tracks[2], tracks[3]]
+    service._set_playback_context(list(tracks), 0, source="session")
+    monkeypatch.setattr(music_service_module.random, "shuffle", lambda queue: queue.reverse())
+
+    moved = service.move_queue_indices([2], -1)
+    shuffled = service.shuffle_queue()
+
+    assert moved is True
+    assert shuffled is True
+    assert [track.id for track in service.queue()] == ["track-3", "track-4", "track-2"]
+    assert [track.id for track in service._playback_context] == ["track-1", "track-3", "track-4", "track-2"]
+    assert app is not None
+
+
 def test_music_service_load_library_reuses_existing_track_ids(tmp_path) -> None:
     track_path = tmp_path / "demo-track.mp3"
     track_path.write_bytes(b"demo")
@@ -342,6 +385,24 @@ def test_music_page_can_save_queue_as_playlist(monkeypatch) -> None:
     assert app is not None
 
 
+def test_music_page_library_filter_keeps_playlist_lookup_intact() -> None:
+    app = QApplication.instance() or QApplication([])
+    tracks = [
+        TrackRecord(id="track-1", path="/tmp/one.mp3", title="One", artist="Artist"),
+        TrackRecord(id="track-2", path="/tmp/two.mp3", title="Two", artist="Artist"),
+    ]
+    page = MusicPage(MusicPluginConfig(music_library=tracks), MusicService())
+    page._playlist_track_ids = ["track-2"]
+    page._render_playlist_tracks()
+
+    page.library_search.setText("One")
+
+    assert page.library_table.rowCount() == 1
+    assert page.library_summary.text() == "Showing 1 of 2 library track(s)."
+    assert page.playlist_tracks.item(0).text() == "Two - Artist"
+    assert app is not None
+
+
 def test_music_page_uses_compact_inline_rename_editor() -> None:
     app = QApplication.instance() or QApplication([])
     tracks = [TrackRecord(id="track-1", path="/tmp/one.mp3", title="One", artist="Artist")]
@@ -379,6 +440,38 @@ def test_music_page_library_rename_updates_track_metadata_and_dependents() -> No
     assert page.queue_list.item(0).text() == "Renamed Track - Artist"
     assert page.playlist_tracks.item(0).text() == "Renamed Track - Artist"
     assert refresh_calls == ["refresh"]
+    assert app is not None
+
+
+def test_music_page_can_reorder_queue_and_playlist_tracks() -> None:
+    app = QApplication.instance() or QApplication([])
+    tracks = [
+        TrackRecord(id="track-1", path="/tmp/one.mp3", title="One", artist="Artist"),
+        TrackRecord(id="track-2", path="/tmp/two.mp3", title="Two", artist="Artist"),
+        TrackRecord(id="track-3", path="/tmp/three.mp3", title="Three", artist="Artist"),
+    ]
+    service = MusicService()
+    page = MusicPage(MusicPluginConfig(music_library=tracks), service)
+
+    service.queue_tracks(tracks)
+    queue_item = page.queue_list.item(2)
+    assert queue_item is not None
+    queue_item.setSelected(True)
+    page._move_selected_queue_tracks(-1)
+
+    page._playlist_track_ids = ["track-1", "track-2", "track-3"]
+    page._render_playlist_tracks()
+    playlist_item = page.playlist_tracks.item(2)
+    assert playlist_item is not None
+    playlist_item.setSelected(True)
+    page._move_selected_playlist_tracks(-1)
+
+    assert [page.queue_list.item(index).text() for index in range(page.queue_list.count())] == [
+        "One - Artist",
+        "Three - Artist",
+        "Two - Artist",
+    ]
+    assert page._playlist_track_ids == ["track-1", "track-3", "track-2"]
     assert app is not None
 
 
